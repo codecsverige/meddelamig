@@ -69,10 +69,21 @@ function RegisterForm() {
         }),
       });
 
-      const result = await response.json();
+      let result: any = null;
+
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        result = null;
+      }
 
       if (!response.ok) {
-        throw new Error(result.error || 'Ett fel uppstod vid registrering');
+        const message =
+          result?.error ||
+          (response.status === 500
+            ? 'Ett oväntat fel uppstod på servern'
+            : `Registreringen misslyckades (${response.status})`);
+        throw new Error(message);
       }
 
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
