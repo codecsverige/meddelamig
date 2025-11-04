@@ -249,7 +249,16 @@ CREATE POLICY "Users can view their own profile"
 
 CREATE POLICY "Users can update their own profile"
   ON users FOR UPDATE
-  USING (id = auth.uid());
+  USING (id = auth.uid())
+  WITH CHECK (
+    id = auth.uid()
+    AND (
+      organization_id IS NULL
+      OR organization_id IN (
+        SELECT organization_id FROM users WHERE id = auth.uid()
+      )
+    )
+  );
 
 -- Contacts policies
 CREATE POLICY "Users can view contacts in their organization"
