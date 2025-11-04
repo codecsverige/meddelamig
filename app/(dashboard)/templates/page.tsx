@@ -5,9 +5,11 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, MessageSquare, Trash2, Edit2 } from 'lucide-react';
+import { useToast } from '@/components/ui/toast';
 
 export default function TemplatesPage() {
   const supabase = createClient();
+  const { showToast } = useToast();
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -90,9 +92,10 @@ export default function TemplatesPage() {
       setShowModal(false);
       setEditingTemplate(null);
       setFormData({ name: '', message: '', category: 'reminder' });
+      showToast(editingTemplate ? 'Mall uppdaterad! ✅' : 'Mall skapad! ✅', 'success');
       loadTemplates();
     } catch (error: any) {
-      alert(error.message);
+      showToast(error.message || 'Ett fel uppstod', 'error');
     } finally {
       setLoading(false);
     }
@@ -103,9 +106,10 @@ export default function TemplatesPage() {
 
     try {
       await supabase.from('sms_templates').delete().eq('id', id);
+      showToast('Mall raderad! 🗑️', 'success');
       loadTemplates();
-    } catch (error) {
-      console.error('Failed to delete template:', error);
+    } catch (error: any) {
+      showToast(error.message || 'Ett fel uppstod', 'error');
     }
   };
 

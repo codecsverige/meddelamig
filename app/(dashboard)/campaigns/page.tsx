@@ -7,10 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Send, Users, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { calculateSMSCost, calculateSMSSegments } from '@/lib/utils/sms';
+import { useToast } from '@/components/ui/toast';
 
 export default function CampaignsPage() {
   const router = useRouter();
   const supabase = createClient();
+  const { showToast } = useToast();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -105,13 +107,15 @@ export default function CampaignsPage() {
       if (error) throw error;
 
       // Send SMS to all recipients
+      showToast(`Kampanj skapades! Skickar till ${totalRecipients} kontakter... 📤`, 'info');
       await sendCampaignSMS(campaign.id, formData.targetContactIds, formData.message);
 
       setShowModal(false);
       setFormData({ name: '', message: '', targetTags: [], targetContactIds: [] });
+      showToast('Kampanj slutförd! ✅', 'success');
       loadData();
     } catch (error: any) {
-      alert(error.message);
+      showToast(error.message || 'Ett fel uppstod', 'error');
     } finally {
       setLoading(false);
     }

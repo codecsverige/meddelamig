@@ -8,10 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { formatPhoneNumber } from '@/lib/utils/phone';
+import { useToast } from '@/components/ui/toast';
 
 export default function NewContactPage() {
   const router = useRouter();
   const supabase = createClient();
+  const { showToast } = useToast();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -71,11 +73,16 @@ export default function NewContactPage() {
 
       if (insertError) throw insertError;
 
-      // Success - redirect to contacts
-      router.push('/contacts?success=contact_created');
-      router.refresh();
+      // Success
+      showToast('Kontakt skapad! ✅', 'success');
+      setTimeout(() => {
+        router.push('/contacts');
+        router.refresh();
+      }, 1000);
     } catch (err: any) {
-      setError(err.message || 'Ett fel uppstod');
+      const errorMsg = err.message || 'Ett fel uppstod';
+      setError(errorMsg);
+      showToast(errorMsg, 'error');
     } finally {
       setLoading(false);
     }

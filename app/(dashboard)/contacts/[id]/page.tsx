@@ -8,11 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ArrowLeft, Edit2, Trash2, Send, Phone, Mail, Tag, Calendar, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { displayPhoneNumber } from '@/lib/utils/phone';
+import { useToast } from '@/components/ui/toast';
 
 export default function ContactDetailsPage() {
   const router = useRouter();
   const params = useParams();
   const supabase = createClient();
+  const { showToast } = useToast();
   
   const [contact, setContact] = useState<any>(null);
   const [smsHistory, setSmsHistory] = useState<any[]>([]);
@@ -98,9 +100,10 @@ export default function ContactDetailsPage() {
       if (error) throw error;
 
       setEditMode(false);
+      showToast('Kontakt uppdaterad! ✅', 'success');
       loadContact();
     } catch (error: any) {
-      alert(error.message);
+      showToast(error.message || 'Ett fel uppstod', 'error');
     } finally {
       setLoading(false);
     }
@@ -118,9 +121,12 @@ export default function ContactDetailsPage() {
 
       if (error) throw error;
 
-      router.push('/contacts?deleted=true');
+      showToast('Kontakt raderad! 🗑️', 'success');
+      setTimeout(() => {
+        router.push('/contacts');
+      }, 1000);
     } catch (error: any) {
-      alert(error.message);
+      showToast(error.message || 'Ett fel uppstod', 'error');
     } finally {
       setLoading(false);
     }
