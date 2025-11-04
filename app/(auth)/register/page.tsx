@@ -70,40 +70,8 @@ function RegisterForm() {
       if (authError) throw authError;
 
       if (authData.user) {
-        // Create organization
-        const slug = formData.organizationName
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '');
-
-        const { data: orgData, error: orgError } = await supabase
-          .from('organizations')
-          .insert({
-            name: formData.organizationName,
-            slug,
-            industry: formData.industry,
-            plan: 'starter',
-            sms_credits: 10, // Free trial credits
-            subscription_status: 'trial',
-          })
-          .select()
-          .single();
-
-        if (orgError) throw orgError;
-
-        // Update user with organization
-        const { error: userError } = await supabase
-          .from('users')
-          .update({
-            organization_id: orgData.id,
-            role: 'owner',
-          })
-          .eq('id', authData.user.id);
-
-        if (userError) throw userError;
-
-        // Success - redirect to dashboard
-        router.push('/dashboard?welcome=true');
+        // Redirect to onboarding to complete setup
+        router.push('/onboarding');
         router.refresh();
       }
     } catch (err: any) {

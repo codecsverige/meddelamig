@@ -1,7 +1,8 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessageSquare, Users, Send, TrendingUp } from 'lucide-react';
+import { MessageSquare, Users, Send, TrendingUp, Sparkles, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 
 export default async function DashboardPage() {
   const supabase = createServerClient();
@@ -77,15 +78,84 @@ export default async function DashboardPage() {
     },
   ];
 
+  // Check if new user (no contacts and no SMS sent)
+  const isNewUser = (contactsCount || 0) === 0 && (smsCount || 0) === 0;
+
   return (
     <div className="p-8">
+      {/* Welcome Banner for New Users */}
+      {isNewUser && (
+        <Card className="mb-8 bg-gradient-to-r from-blue-600 to-indigo-600 border-0">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <Sparkles className="h-8 w-8 text-yellow-300" />
+              </div>
+              <div className="flex-1 text-white">
+                <h2 className="text-2xl font-bold mb-2">
+                  Välkommen till MEDDELA! 🎉
+                </h2>
+                <p className="text-blue-100 mb-4">
+                  Du har {organization?.sms_credits || 0} gratis SMS-krediter! Här är vad du kan göra härnäst:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Link
+                    href="/contacts/new"
+                    className="bg-white/10 hover:bg-white/20 backdrop-blur rounded-lg p-4 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Users className="h-5 w-5" />
+                      <span className="font-semibold">Steg 1</span>
+                    </div>
+                    <p className="text-sm text-blue-50">
+                      Lägg till din första kontakt
+                    </p>
+                    <ArrowRight className="h-4 w-4 mt-2 opacity-75" />
+                  </Link>
+
+                  <Link
+                    href="/templates"
+                    className="bg-white/10 hover:bg-white/20 backdrop-blur rounded-lg p-4 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <MessageSquare className="h-5 w-5" />
+                      <span className="font-semibold">Steg 2</span>
+                    </div>
+                    <p className="text-sm text-blue-50">
+                      Utforska SMS-mallar
+                    </p>
+                    <ArrowRight className="h-4 w-4 mt-2 opacity-75" />
+                  </Link>
+
+                  <Link
+                    href="/messages/send"
+                    className="bg-white/10 hover:bg-white/20 backdrop-blur rounded-lg p-4 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Send className="h-5 w-5" />
+                      <span className="font-semibold">Steg 3</span>
+                    </div>
+                    <p className="text-sm text-blue-50">
+                      Skicka ditt första SMS
+                    </p>
+                    <ArrowRight className="h-4 w-4 mt-2 opacity-75" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Välkommen tillbaka, {user?.full_name}! 👋
+          {isNewUser ? 'Kom igång med MEDDELA' : `Välkommen tillbaka, ${user?.full_name}! 👋`}
         </h1>
         <p className="text-gray-600">
-          Här är en översikt över din SMS-plattform
+          {isNewUser
+            ? 'Följ stegen ovan för att komma igång med din SMS-plattform'
+            : 'Här är en översikt över din SMS-plattform'}
         </p>
       </div>
 

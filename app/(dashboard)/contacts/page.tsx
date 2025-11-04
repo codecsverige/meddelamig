@@ -47,14 +47,16 @@ export default async function ContactsPage() {
           </p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline">
+          <Button variant="outline" disabled>
             <Download className="h-4 w-4 mr-2" />
             Exportera
           </Button>
-          <Button variant="outline">
-            <Upload className="h-4 w-4 mr-2" />
-            Importera
-          </Button>
+          <Link href="/contacts/import">
+            <Button variant="outline">
+              <Upload className="h-4 w-4 mr-2" />
+              Importera
+            </Button>
+          </Link>
           <Link href="/contacts/new">
             <Button>
               <Plus className="h-4 w-4 mr-2" />
