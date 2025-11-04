@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,14 +9,15 @@ import { ArrowLeft, Send } from 'lucide-react';
 import Link from 'next/link';
 import { calculateSMSSegments, calculateSMSCost } from '@/lib/utils/sms';
 
-export default function SendSMSPage() {
+function SendSMSForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [contacts, setContacts] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [formData, setFormData] = useState({
-    contactId: '',
+    contactId: searchParams.get('contact') || '',
     templateId: '',
     message: '',
   });
@@ -268,5 +269,13 @@ export default function SendSMSPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function SendSMSPage() {
+  return (
+    <Suspense fallback={<div className="p-8 flex items-center justify-center"><p className="text-gray-500">Laddar...</p></div>}>
+      <SendSMSForm />
+    </Suspense>
   );
 }
