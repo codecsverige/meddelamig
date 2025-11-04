@@ -56,53 +56,35 @@ function RegisterForm() {
     }
 
     try {
-      // Create user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            full_name: formData.fullName,
-          },
-        },
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: formData.fullName,
+          email: formData.email,
+          password: formData.password,
+          organizationName: formData.organizationName,
+          industry: formData.industry,
+          acceptTerms: formData.acceptTerms,
+        }),
       });
 
-      if (authError) throw authError;
+      const result = await response.json();
 
-      if (authData.user) {
-        // Create organization
-        const slug = formData.organizationName
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '');
+      if (!response.ok) {
+        throw new Error(result.error || 'Ett fel uppstod vid registrering');
+      }
 
-        const { data: orgData, error: orgError } = await supabase
-          .from('organizations')
-          .insert({
-            name: formData.organizationName,
-            slug,
-            industry: formData.industry,
-            plan: 'starter',
-            sms_credits: 10, // Free trial credits
-            subscription_status: 'trial',
-          })
-          .select()
-          .single();
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
 
-        if (orgError) throw orgError;
+      if (signInError) {
+        throw signInError;
+      }
 
-        // Update user with organization
-        const { error: userError } = await supabase
-          .from('users')
-          .update({
-            organization_id: orgData.id,
-            role: 'owner',
-          })
-          .eq('id', authData.user.id);
-
-        if (userError) throw userError;
-
-        // Success - redirect to dashboard
+      if (signInData.session) {
         router.push('/dashboard?welcome=true');
         router.refresh();
       }
