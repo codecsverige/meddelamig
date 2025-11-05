@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Plus, Download, Upload, Search, Users, X } from "lucide-react";
+import { Plus, Download, Upload, Search, Users, X, Tag } from "lucide-react";
 import { displayPhoneNumber } from "@/lib/utils/phone";
 import { useToast } from "@/components/ui/toast";
 
@@ -27,6 +27,8 @@ export default function ContactsPage() {
   const [selectedTag, setSelectedTag] = useState("");
   const [allTags, setAllTags] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+  const [bulkActionMode, setBulkActionMode] = useState(false);
 
   const { showToast } = useToast();
 
@@ -110,6 +112,89 @@ export default function ContactsPage() {
     setSelectedTag("");
   };
 
+  const toggleSelectAll = () => {
+    if (selectedContacts.size === filteredContacts.length) {
+      setSelectedContacts(new Set());
+    } else {
+      setSelectedContacts(new Set(filteredContacts.map(c => c.id)));
+    }
+  };
+
+  const toggleSelectContact = (contactId: string) => {
+    const newSet = new Set(selectedContacts);
+    if (newSet.has(contactId)) {
+      newSet.delete(contactId);
+    } else {
+      newSet.add(contactId);
+    }
+    setSelectedContacts(newSet);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedContacts.size === 0) return;
+    
+    if (!confirm(`Är du säker på att du vill ta bort ${selectedContacts.size} kontakter?`)) return;
+
+    try {
+      const contactIds = Array.from(selectedContacts);
+      
+      const { error } = await supabase
+        .from('contacts')
+        .update({ deleted_at: new Date().toISOString() })
+        .in('id', contactIds);
+
+      if (error) throw error;
+
+      showToast(`${selectedContacts.size} kontakter borttagna!`, 'success');
+      setSelectedContacts(new Set());
+      setBulkActionMode(false);
+      loadContacts();
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showToast('Kunde inte ta bort kontakter', 'error');
+    }
+  };
+
+  const handleBulkAddTag = async () => {
+    if (selectedContacts.size === 0) return;
+    
+    const newTag = prompt('Ange tagg att lägga till:');
+    if (!newTag) return;
+
+    try {
+      const contactIds = Array.from(selectedContacts);
+      
+      // Get current contacts
+      const { data: currentContacts } = await supabase
+        .from('contacts')
+        .select('id, tags')
+        .in('id', contactIds);
+
+      if (!currentContacts) throw new Error('Could not fetch contacts');
+
+      // Update each contact
+      for (const contact of currentContacts) {
+        const currentTags = contact.tags || [];
+        if (!currentTags.includes(newTag)) {
+          const updatedTags = [...currentTags, newTag];
+          
+          await supabase
+            .from('contacts')
+            .update({ tags: updatedTags })
+            .eq('id', contact.id);
+        }
+      }
+
+      showToast(`Tagg "${newTag}" tillagd till ${selectedContacts.size} kontakter!`, 'success');
+      setSelectedContacts(new Set());
+      setBulkActionMode(false);
+      loadContacts();
+    } catch (error) {
+      console.error('Bulk add tag error:', error);
+      showToast('Kunde inte lägga till tagg', 'error');
+    }
+  };
+
   const handleExport = async () => {
     try {
       setExporting(true);
@@ -146,8 +231,11 @@ export default function ContactsPage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center">
-        <p className="text-gray-500">Laddar kontakter...</p>
+      <div className="p-8 flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-600 mb-4"></div>
+          <p className="text-gray-500 font-medium">Laddar kontakter...</p>
+        </div>
       </div>
     );
   }
@@ -161,26 +249,62 @@ export default function ContactsPage() {
           <p className="text-gray-600">Hantera dina kunder och kontakter</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button
-            variant="outline"
-            onClick={handleExport}
-            disabled={exporting || contacts.length === 0}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {exporting ? "Exporterar..." : "Exportera"}
-          </Button>
-          <Link href="/contacts/import">
-            <Button variant="outline">
-              <Upload className="h-4 w-4 mr-2" />
-              Importera
-            </Button>
-          </Link>
-          <Link href="/contacts/new">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Ny kontakt
-            </Button>
-          </Link>
+          {bulkActionMode && selectedContacts.size > 0 ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSelectedContacts(new Set());
+                  setBulkActionMode(false);
+                }}
+              >
+                <X className="h-4 w-4 mr-2" />
+                Avbryt ({selectedContacts.size})
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleBulkAddTag}
+              >
+                L\u00e4gg till tagg
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleBulkDelete}
+                className="text-red-600 hover:text-red-700"
+              >
+                Ta bort valda
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setBulkActionMode(!bulkActionMode)}
+              >
+                {bulkActionMode ? 'Avbryt val' : 'V\u00e4lj flera'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleExport}
+                disabled={exporting || filteredContacts.length === 0}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exporting ? "Exporterar..." : `Exportera ${filteredContacts.length > 0 ? `(${filteredContacts.length})` : ''}`}
+              </Button>
+              <Link href="/contacts/import">
+                <Button variant="outline">
+                  <Upload className="h-4 w-4 mr-2" />
+                  Importera
+                </Button>
+              </Link>
+              <Link href="/contacts/new">
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Ny kontakt
+                </Button>
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
@@ -251,6 +375,16 @@ export default function ContactsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200">
+                    {bulkActionMode && (
+                      <th className="w-12 py-3 px-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0}
+                          onChange={toggleSelectAll}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                      </th>
+                    )}
                     <th className="text-left py-3 px-4 font-medium text-gray-700">
                       Namn
                     </th>
@@ -275,9 +409,19 @@ export default function ContactsPage() {
                   {filteredContacts.map((contact: any) => (
                     <tr
                       key={contact.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => router.push(`/contacts/${contact.id}`)}
+                      className={`border-b border-gray-100 hover:bg-gray-50 ${!bulkActionMode ? 'cursor-pointer' : ''} ${selectedContacts.has(contact.id) ? 'bg-blue-50' : ''}`}
+                      onClick={() => !bulkActionMode && router.push(`/contacts/${contact.id}`)}
                     >
+                      {bulkActionMode && (
+                        <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedContacts.has(contact.id)}
+                            onChange={() => toggleSelectContact(contact.id)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                        </td>
+                      )}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
