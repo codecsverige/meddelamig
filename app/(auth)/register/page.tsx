@@ -56,7 +56,7 @@ function RegisterForm() {
     }
 
     try {
-      // Create user
+      // Create user with Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -64,6 +64,7 @@ function RegisterForm() {
           data: {
             full_name: formData.fullName,
           },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 

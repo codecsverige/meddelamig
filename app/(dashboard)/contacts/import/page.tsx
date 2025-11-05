@@ -4,33 +4,42 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Upload, Download, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ArrowLeft, Upload, Download, CheckCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import Link from 'next/link';
-import { formatPhoneNumber } from '@/lib/utils/phone';
+import { useToast } from '@/components/ui/toast';
+
+interface ImportResult {
+  success: number;
+  failed: number;
+  errors: Array<{ row: number; error: string; data: any }>;
+}
 
 export default function ImportContactsPage() {
   const router = useRouter();
   const supabase = createClient();
+  const { showToast } = useToast();
+
   const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<{
-    success: number;
-    failed: number;
-    errors: string[];
-  } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<ImportResult | null>(null);
+
+  const downloadTemplate = () => {
+    const csvContent = 'full_name,phone,email,tags,notes,gdpr_consent\n' +
+      'Anna Andersson,0701234567,anna@example.com,vip;stamkund,Älskar italiensk mat,true\n' +
+      'Erik Johansson,0709876543,erik@example.com,restaurant,Besöker ofta på fredagar,true\n';
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'kontakter_mall.csv';
+    link.click();
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      // Check file type
-      const validTypes = ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
-      if (!selectedFile.name.endsWith('.csv') && !selectedFile.name.endsWith('.xlsx')) {
-        alert('Endast CSV och Excel filer tillåtna');
-        return;
-      }
-      setFile(selectedFile);
-      setResults(null);
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+      setResult(null);
     }
   };
 
@@ -38,253 +47,361 @@ export default function ImportContactsPage() {
     const lines = text.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
 
-    const headers = lines[0].split(/[,;|\t]/).map(h => h.trim().toLowerCase());
-    const contacts = [];
+    const headers = lines[0].split(',').map(h => h.trim());
+    const rows = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(/[,;|\t]/).map(v => v.trim());
-      const contact: any = {};
-
+      const values = lines[i].split(',').map(v => v.trim());
+      const row: any = {};
+      
       headers.forEach((header, index) => {
-        if (header.includes('name') || header.includes('namn')) {
-          contact.name = values[index];
-        } else if (header.includes('phone') || header.includes('telefon') || header.includes('mobil')) {
-          contact.phone = values[index];
-        } else if (header.includes('email') || header.includes('epost')) {
-          contact.email = values[index];
-        } else if (header.includes('tag') || header.includes('tags')) {
-          contact.tags = values[index] ? values[index].split(',').map((t: string) => t.trim()) : [];
-        }
+        row[header] = values[index] || '';
       });
-
-      if (contact.phone) {
-        contacts.push(contact);
-      }
+      
+      rows.push(row);
     }
 
-    return contacts;
+    return rows;
+  };
+
+  const formatPhone = (phone: string): string => {
+    let cleaned = phone.replace(/\s+/g, '');
+    
+    if (cleaned.startsWith('07') && cleaned.length === 10) {
+      return '+46' + cleaned.substring(1);
+    }
+    
+    if (cleaned.startsWith('46') && !cleaned.startsWith('+')) {
+      return '+' + cleaned;
+    }
+    
+    if (!cleaned.startsWith('+')) {
+      return '+46' + cleaned;
+    }
+    
+    return cleaned;
+  };
+
+  const validateContact = (contact: any, rowNumber: number): { valid: boolean; error?: string } => {
+    if (!contact.full_name || contact.full_name.length < 2) {
+      return { valid: false, error: `Rad ${rowNumber}: Ogiltigt namn` };
+    }
+
+    if (!contact.phone) {
+      return { valid: false, error: `Rad ${rowNumber}: Telefonnummer saknas` };
+    }
+
+    const phoneRegex = /^(\+46|0)[1-9]\d{7,9}$/;
+    const formattedPhone = formatPhone(contact.phone);
+    if (!phoneRegex.test(formattedPhone)) {
+      return { valid: false, error: `Rad ${rowNumber}: Ogiltigt telefonnummer (${contact.phone})` };
+    }
+
+    return { valid: true };
   };
 
   const handleImport = async () => {
-    if (!file) return;
+    if (!file) {
+      showToast('Välj en fil först', 'error');
+      return;
+    }
 
-    setLoading(true);
-    const errors: string[] = [];
-    let successCount = 0;
-    let failedCount = 0;
+    setImporting(true);
+    const importResult: ImportResult = { success: 0, failed: 0, errors: [] };
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
+      // Get user's organization
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Inte inloggad');
 
-      const { data: user } = await supabase
+      const { data: userData } = await supabase
         .from('users')
         .select('organization_id')
-        .eq('id', session.user.id)
+        .eq('id', user.id)
         .single();
 
-      if (!user?.organization_id) throw new Error('No organization');
+      if (!userData?.organization_id) {
+        throw new Error('Organisation saknas');
+      }
 
       // Read file
       const text = await file.text();
       const contacts = parseCSV(text);
 
       if (contacts.length === 0) {
-        throw new Error('Inga kontakter hittades i filen. Kontrollera formatet.');
+        showToast('Inga kontakter hittades i filen', 'error');
+        setImporting(false);
+        return;
       }
 
-      // Process each contact
-      for (const contact of contacts) {
-        try {
-          // Format phone number
-          const formattedPhone = formatPhoneNumber(contact.phone);
-          if (!formattedPhone) {
-            errors.push(`Ogiltigt telefonnummer: ${contact.phone}`);
-            failedCount++;
-            continue;
-          }
+      // Process contacts
+      for (let i = 0; i < contacts.length; i++) {
+        const contact = contacts[i];
+        const rowNumber = i + 2; // +2 because row 1 is headers and we start at row 2
 
-          // Insert contact
-          const { error } = await supabase.from('contacts').insert({
-            organization_id: user.organization_id,
-            name: contact.name || null,
-            phone: formattedPhone,
-            email: contact.email || null,
-            tags: contact.tags || [],
-            sms_consent: true,
-            marketing_consent: false,
-            consent_date: new Date().toISOString(),
-            consent_source: 'import',
+        // Validate
+        const validation = validateContact(contact, rowNumber);
+        if (!validation.valid) {
+          importResult.failed++;
+          importResult.errors.push({
+            row: rowNumber,
+            error: validation.error!,
+            data: contact,
           });
+          continue;
+        }
 
-          if (error) {
-            if (error.code === '23505') {
-              errors.push(`Kontakt finns redan: ${contact.phone}`);
-            } else {
-              errors.push(`${contact.phone}: ${error.message}`);
-            }
-            failedCount++;
-          } else {
-            successCount++;
-          }
-        } catch (err: any) {
-          errors.push(`${contact.phone}: ${err.message}`);
-          failedCount++;
+        // Prepare data
+        const contactData = {
+          organization_id: userData.organization_id,
+          full_name: contact.full_name,
+          phone: formatPhone(contact.phone),
+          email: contact.email || null,
+          tags: contact.tags ? contact.tags.split(';').map((t: string) => t.trim()) : null,
+          notes: contact.notes || null,
+          gdpr_consent: contact.gdpr_consent === 'true' || contact.gdpr_consent === '1',
+        };
+
+        // Insert
+        const { error } = await supabase
+          .from('contacts')
+          .insert(contactData);
+
+        if (error) {
+          importResult.failed++;
+          importResult.errors.push({
+            row: rowNumber,
+            error: error.message,
+            data: contact,
+          });
+        } else {
+          importResult.success++;
         }
       }
 
-      setResults({
-        success: successCount,
-        failed: failedCount,
-        errors: errors.slice(0, 10), // Show first 10 errors
-      });
+      setResult(importResult);
+      
+      if (importResult.success > 0) {
+        showToast(
+          `${importResult.success} kontakter importerade! ✅`,
+          'success'
+        );
+      }
 
+      if (importResult.failed > 0) {
+        showToast(
+          `${importResult.failed} kontakter misslyckades`,
+          'error'
+        );
+      }
     } catch (error: any) {
-      alert(error.message || 'Ett fel uppstod');
+      console.error('Import error:', error);
+      showToast(error.message || 'Import misslyckades', 'error');
     } finally {
-      setLoading(false);
+      setImporting(false);
     }
   };
 
-  const downloadTemplate = () => {
-    const csv = `namn,telefon,email,tags
-Anna Andersson,0701234567,anna@example.com,vip
-Erik Svensson,0709876543,erik@example.com,regular
-Maria Johansson,0707654321,maria@example.com,new`;
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'meddela-kontakter-mall.csv';
-    a.click();
-  };
-
   return (
-    <div className="p-4 lg:p-8 max-w-4xl mx-auto">
-      <Link
-        href="/contacts"
-        className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Tillbaka till kontakter
-      </Link>
+    <div className="p-8">
+      {/* Header */}
+      <div className="mb-6">
+        <Link
+          href="/contacts"
+          className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Tillbaka till kontakter
+        </Link>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Importera kontakter</CardTitle>
-          <CardDescription>
-            Ladda upp en CSV eller Excel-fil med dina kontakter
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Instructions */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-semibold text-blue-900 mb-2">📋 Instruktioner:</h4>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• Filen måste innehålla kolumner: <strong>namn, telefon</strong></li>
-              <li>• Valfria kolumner: <strong>email, tags</strong></li>
-              <li>• Telefonnummer i svenskt format (070...)</li>
-              <li>• CSV eller Excel format (.csv, .xlsx)</li>
-              <li>• Max 1000 kontakter per import</li>
-            </ul>
-          </div>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          Importera kontakter
+        </h1>
+        <p className="text-gray-600">
+          Importera kontakter från CSV eller Excel-fil
+        </p>
+      </div>
 
-          {/* Download Template */}
-          <div>
-            <Button variant="outline" onClick={downloadTemplate} className="w-full">
-              <Download className="h-4 w-4 mr-2" />
-              Ladda ner exempelfil
-            </Button>
-          </div>
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Instructions */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Instruktioner</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ol className="list-decimal list-inside space-y-2 text-gray-700">
+              <li>Ladda ner vår CSV-mall nedan</li>
+              <li>Fyll i dina kontakter i filen</li>
+              <li>Spara filen som CSV</li>
+              <li>Ladda upp filen här</li>
+            </ol>
 
-          {/* File Upload */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Välj fil *
-            </label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors">
-              <input
-                type="file"
-                accept=".csv,.xlsx"
-                onChange={handleFileChange}
-                className="hidden"
-                id="file-upload"
-              />
-              <label
-                htmlFor="file-upload"
-                className="cursor-pointer flex flex-col items-center"
-              >
-                <Upload className="h-12 w-12 text-gray-400 mb-3" />
-                <p className="text-sm font-medium text-gray-900 mb-1">
-                  {file ? file.name : 'Klicka för att välja fil'}
-                </p>
-                <p className="text-xs text-gray-500">
-                  CSV eller Excel (max 5MB)
-                </p>
-              </label>
+            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 className="font-semibold text-blue-900 mb-2">Fältbeskrivning:</h3>
+              <ul className="space-y-1 text-sm text-blue-800">
+                <li><strong>full_name</strong>: För- och efternamn (obligatorisk)</li>
+                <li><strong>phone</strong>: Telefonnummer i format 070XXXXXXX eller +46XXXXXXXXX (obligatorisk)</li>
+                <li><strong>email</strong>: E-postadress (valfri)</li>
+                <li><strong>tags</strong>: Taggar separerade med semikolon (t.ex. vip;stamkund) (valfri)</li>
+                <li><strong>notes</strong>: Anteckningar (valfri)</li>
+                <li><strong>gdpr_consent</strong>: true eller false (obligatorisk)</li>
+              </ul>
             </div>
-          </div>
 
-          {/* Import Button */}
-          <Button
-            onClick={handleImport}
-            disabled={!file || loading}
-            className="w-full"
-          >
-            {loading ? 'Importerar...' : 'Importera kontakter'}
-          </Button>
+            <Button
+              onClick={downloadTemplate}
+              className="mt-4"
+              variant="outline"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Ladda ner CSV-mall
+            </Button>
+          </CardContent>
+        </Card>
 
-          {/* Results */}
-          {results && (
+        {/* Upload */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Ladda upp fil</CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                    <span className="font-semibold text-green-900">Lyckades</span>
-                  </div>
-                  <p className="text-2xl font-bold text-green-900">{results.success}</p>
-                  <p className="text-sm text-green-700">kontakter importerade</p>
-                </div>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                <FileSpreadsheet className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                
+                <input
+                  type="file"
+                  accept=".csv,.txt"
+                  onChange={handleFileChange}
+                  className="hidden"
+                  id="file-upload"
+                />
+                
+                <label
+                  htmlFor="file-upload"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                >
+                  <Upload className="h-4 w-4" />
+                  Välj fil
+                </label>
 
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <XCircle className="h-5 w-5 text-red-600" />
-                    <span className="font-semibold text-red-900">Misslyckades</span>
-                  </div>
-                  <p className="text-2xl font-bold text-red-900">{results.failed}</p>
-                  <p className="text-sm text-red-700">kontakter</p>
-                </div>
+                {file && (
+                  <p className="mt-4 text-sm text-gray-600">
+                    Vald fil: <strong>{file.name}</strong>
+                  </p>
+                )}
               </div>
 
-              {results.errors.length > 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertCircle className="h-5 w-5 text-yellow-600" />
-                    <span className="font-semibold text-yellow-900">
-                      Fel (visar {results.errors.length} av {results.failed})
-                    </span>
-                  </div>
-                  <ul className="text-sm text-yellow-800 space-y-1">
-                    {results.errors.map((error, index) => (
-                      <li key={index}>• {error}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
               <Button
-                onClick={() => router.push('/contacts')}
-                variant="outline"
+                onClick={handleImport}
+                disabled={!file || importing}
                 className="w-full"
+                size="lg"
               >
-                Gå till kontakter
+                {importing ? 'Importerar...' : 'Importera kontakter'}
               </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        {/* Results */}
+        {result && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Importresultat</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                      <span className="font-semibold text-green-900">Lyckades</span>
+                    </div>
+                    <p className="text-3xl font-bold text-green-600">
+                      {result.success}
+                    </p>
+                    <p className="text-sm text-green-700">kontakter importerade</p>
+                  </div>
+
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle className="h-5 w-5 text-red-600" />
+                      <span className="font-semibold text-red-900">Misslyckades</span>
+                    </div>
+                    <p className="text-3xl font-bold text-red-600">
+                      {result.failed}
+                    </p>
+                    <p className="text-sm text-red-700">fel upptäcktes</p>
+                  </div>
+                </div>
+
+                {result.errors.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="font-semibold text-gray-900 mb-3">
+                      Fel ({result.errors.length})
+                    </h3>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {result.errors.map((error, index) => (
+                        <div
+                          key={index}
+                          className="p-3 bg-red-50 border border-red-200 rounded text-sm"
+                        >
+                          <p className="text-red-900 font-medium">{error.error}</p>
+                          <p className="text-red-700 text-xs mt-1">
+                            Data: {JSON.stringify(error.data)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {result.success > 0 && (
+                  <div className="pt-4">
+                    <Link href="/contacts">
+                      <Button className="w-full">
+                        Visa importerade kontakter
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Tips */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Tips för framgångsrik import</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 text-gray-700">
+              <li className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <span>Kontrollera att telefonnummer är i svenskt format (07XXXXXXXX)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <span>Dubbelkolla att alla har GDPR-samtycke innan import</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <span>Använd semikolon (;) för att separera flera taggar</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <span>Spara filen som CSV (kommaseparerad) för bästa resultat</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <span>Testa med ett fåtal kontakter först innan stor import</span>
+              </li>
+            </ul>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
