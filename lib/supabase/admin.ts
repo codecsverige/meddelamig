@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-let adminClient: ReturnType<typeof createClient<Database>> | null = null;
+type AdminClient = ReturnType<typeof createClient<Database>>;
+
+let adminClient: AdminClient | null = null;
 
 export const createAdminClient = () => {
   if (adminClient) return adminClient;
