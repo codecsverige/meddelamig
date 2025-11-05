@@ -51,6 +51,7 @@ export default function CampaignsPage() {
   const [formData, setFormData] = useState({
     name: "",
     message: "",
+    scheduledFor: "",
     targetTags: [] as string[],
     targetContactIds: [] as string[],
   });
@@ -90,6 +91,18 @@ export default function CampaignsPage() {
   );
   const totalEstimatedCost = formData.targetContactIds.length * estimatedCost;
   const unmatchedPlaceholders = placeholderResult.unmatched;
+  const scheduledDateLabel = useMemo(() => {
+    if (!formData.scheduledFor) {
+      return null;
+    }
+
+    const timestamp = Date.parse(formData.scheduledFor);
+    if (Number.isNaN(timestamp)) {
+      return null;
+    }
+
+    return new Date(timestamp).toLocaleString("sv-SE");
+  }, [formData.scheduledFor]);
 
   useEffect(() => {
     loadData();
@@ -181,6 +194,14 @@ export default function CampaignsPage() {
       // Calculate recipients
       const totalRecipients = formData.targetContactIds.length;
       const totalCost = totalEstimatedCost;
+      const scheduledForIso =
+        formData.scheduledFor &&
+        !Number.isNaN(Date.parse(formData.scheduledFor))
+          ? new Date(formData.scheduledFor).toISOString()
+          : null;
+      const isFutureSchedule =
+        !!scheduledForIso &&
+        new Date(scheduledForIso).getTime() - Date.now() > 60_000;
 
       // Create campaign
       const { data: campaign, error } = await supabase
@@ -193,6 +214,7 @@ export default function CampaignsPage() {
           target_tags:
             formData.targetTags.length > 0 ? formData.targetTags : null,
           target_contact_ids: formData.targetContactIds,
+          scheduled_for: scheduledForIso,
           status: "scheduled",
           total_recipients: totalRecipients,
           total_cost: totalCost,
@@ -202,7 +224,24 @@ export default function CampaignsPage() {
 
       if (error) throw error;
 
-      // Send SMS to all recipients
+      if (isFutureSchedule) {
+        setShowModal(false);
+        setFormData({
+          name: "",
+          message: "",
+          scheduledFor: "",
+          targetTags: [],
+          targetContactIds: [],
+        });
+        const scheduledLabel = scheduledForIso
+          ? new Date(scheduledForIso).toLocaleString("sv-SE")
+          : "";
+        showToast(`Kampanj schemalagd till ${scheduledLabel}`, "success");
+        loadData();
+        return;
+      }
+
+      // Send SMS to all recipients immediately
       showToast(
         `Kampanj skapades! Skickar till ${totalRecipients} kontakter... 📤`,
         "info",
@@ -217,6 +256,7 @@ export default function CampaignsPage() {
       setFormData({
         name: "",
         message: "",
+        scheduledFor: "",
         targetTags: [],
         targetContactIds: [],
       });
@@ -243,6 +283,7 @@ export default function CampaignsPage() {
 
       let sent = 0;
       let failed = 0;
+      let totalCost = 0;
 
       // Send to each contact
       for (const contactId of contactIds) {
@@ -253,11 +294,17 @@ export default function CampaignsPage() {
             body: JSON.stringify({
               contactId,
               message,
+              messageType: "marketing",
             }),
           });
 
+          const payload = await response.json().catch(() => null);
+
           if (response.ok) {
             sent++;
+            if (payload?.cost) {
+              totalCost += Number(payload.cost) || 0;
+            }
           } else {
             failed++;
           }
@@ -273,6 +320,7 @@ export default function CampaignsPage() {
           status: "completed",
           sent_count: sent,
           failed_count: failed,
+          total_cost: totalCost,
           completed_at: new Date().toISOString(),
         })
         .eq("id", campaignId);
@@ -373,6 +421,13 @@ export default function CampaignsPage() {
                   </p>
                 </div>
 
+                {campaign.scheduled_for && (
+                  <p className="text-xs text-gray-500 mb-4">
+                    Schemalagd:{" "}
+                    {new Date(campaign.scheduled_for).toLocaleString("sv-SE")}
+                  </p>
+                )}
+
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="flex items-center gap-2">
                     <Users className="h-4 w-4 text-gray-500" />
@@ -456,6 +511,27 @@ export default function CampaignsPage() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="T.ex. Veckoslut erbjudande"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Schemalägg (valfritt)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={formData.scheduledFor}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        scheduledFor: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    Lämna tomt för att skicka direkt. Tiden använder din lokala
+                    tidszon.
+                  </p>
                 </div>
 
                 <div>
@@ -665,6 +741,14 @@ export default function CampaignsPage() {
                           {totalEstimatedCost.toFixed(2)} SEK
                         </p>
                       </div>
+                      {scheduledDateLabel && (
+                        <div className="col-span-2">
+                          <p className="text-gray-600">Schemalagd tid:</p>
+                          <p className="font-medium text-gray-900">
+                            {scheduledDateLabel}
+                          </p>
+                        </div>
+                      )}
                     </div>
                     <p className="mt-2 text-xs text-blue-700">
                       Baserat på nuvarande text{" "}
@@ -686,6 +770,7 @@ export default function CampaignsPage() {
                       setFormData({
                         name: "",
                         message: "",
+                        scheduledFor: "",
                         targetTags: [],
                         targetContactIds: [],
                       });
