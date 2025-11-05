@@ -20,6 +20,7 @@ export default function NewContactPage() {
     phone: '',
     email: '',
     tags: '',
+    notes: '',
     smsConsent: true,
     marketingConsent: false,
   });
@@ -65,6 +66,7 @@ export default function NewContactPage() {
         phone: formattedPhone,
         email: formData.email || null,
         tags: formData.tags ? formData.tags.split(',').map(t => t.trim()) : [],
+        notes: formData.notes || null,
         sms_consent: formData.smsConsent,
         marketing_consent: formData.marketingConsent,
         consent_date: new Date().toISOString(),
@@ -76,7 +78,7 @@ export default function NewContactPage() {
       // Success
       showToast('Kontakt skapad! ✅', 'success');
       setTimeout(() => {
-        router.push('/contacts');
+        router.push('/dashboard/contacts');
         router.refresh();
       }, 1000);
     } catch (err: any) {
@@ -99,7 +101,7 @@ export default function NewContactPage() {
   return (
     <div className="p-8 max-w-2xl mx-auto">
       <Link
-        href="/contacts"
+        href="/dashboard/contacts"
         className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -187,6 +189,21 @@ export default function NewContactPage() {
               <p className="text-xs text-gray-500 mt-1">
                 Separera med komma (vip, regular, ny)
               </p>
+            </div>
+
+            <div>
+              <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-2">
+                Anteckningar (valfritt)
+              </label>
+              <textarea
+                id="notes"
+                name="notes"
+                value={formData.notes}
+                onChange={handleChange}
+                rows={3}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder="Lägg till eventuella anteckningar om kontakten..."
+              />
             </div>
 
             <div className="border-t border-gray-200 pt-6">

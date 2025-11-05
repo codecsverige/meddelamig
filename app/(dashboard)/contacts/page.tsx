@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Plus, Download, Upload, Search, Users, X } from "lucide-react";
+import { Plus, Download, Upload, Search, Users, X, CheckCircle, Tag } from "lucide-react";
 import { displayPhoneNumber } from "@/lib/utils/phone";
 import { useToast } from "@/components/ui/toast";
 
@@ -27,6 +27,8 @@ export default function ContactsPage() {
   const [selectedTag, setSelectedTag] = useState("");
   const [allTags, setAllTags] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [sortBy, setSortBy] = useState<'name' | 'created_at' | 'sms_sent'>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const { showToast } = useToast();
 
@@ -36,7 +38,7 @@ export default function ContactsPage() {
 
   useEffect(() => {
     filterContacts();
-  }, [searchQuery, selectedTag, contacts]);
+  }, [searchQuery, selectedTag, contacts, sortBy, sortOrder]);
 
   const loadContacts = async () => {
     try {
@@ -101,6 +103,21 @@ export default function ContactsPage() {
         contact.tags?.includes(selectedTag),
       );
     }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      if (sortBy === 'name') {
+        comparison = (a.name || '').localeCompare(b.name || '');
+      } else if (sortBy === 'created_at') {
+        comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      } else if (sortBy === 'sms_sent') {
+        comparison = (a.total_sms_sent || 0) - (b.total_sms_sent || 0);
+      }
+      
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
 
     setFilteredContacts(filtered);
   };
@@ -169,13 +186,13 @@ export default function ContactsPage() {
             <Download className="h-4 w-4 mr-2" />
             {exporting ? "Exporterar..." : "Exportera"}
           </Button>
-          <Link href="/contacts/import">
+          <Link href="/dashboard/contacts/import">
             <Button variant="outline">
               <Upload className="h-4 w-4 mr-2" />
               Importera
             </Button>
           </Link>
-          <Link href="/contacts/new">
+          <Link href="/dashboard/contacts/new">
             <Button>
               <Plus className="h-4 w-4 mr-2" />
               Ny kontakt
@@ -187,40 +204,62 @@ export default function ContactsPage() {
       {/* Search & Filter */}
       <Card className="mb-6">
         <CardContent className="pt-6">
-          <div className="flex flex-col lg:flex-row gap-4">
-            {/* Search */}
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Sök efter namn, telefon eller email..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Search */}
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Sök efter namn, telefon eller email..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Tag Filter */}
+              <select
+                value={selectedTag}
+                onChange={(e) => setSelectedTag(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[150px]"
+              >
+                <option value="">Alla taggar</option>
+                {allTags.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))}
+              </select>
+
+              {/* Sort By */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'name' | 'created_at' | 'sms_sent')}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[150px]"
+              >
+                <option value="created_at">Senast skapad</option>
+                <option value="name">Namn (A-Ö)</option>
+                <option value="sms_sent">SMS skickade</option>
+              </select>
+
+              {/* Sort Order */}
+              <button
+                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500"
+                title={sortOrder === 'asc' ? 'Stigande' : 'Fallande'}
+              >
+                {sortOrder === 'asc' ? '↑' : '↓'}
+              </button>
+
+              {/* Clear Filters */}
+              {(searchQuery || selectedTag) && (
+                <Button variant="outline" onClick={clearFilters}>
+                  <X className="h-4 w-4 mr-2" />
+                  Rensa
+                </Button>
+              )}
             </div>
-
-            {/* Tag Filter */}
-            <select
-              value={selectedTag}
-              onChange={(e) => setSelectedTag(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[150px]"
-            >
-              <option value="">Alla taggar</option>
-              {allTags.map((tag) => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
-              ))}
-            </select>
-
-            {/* Clear Filters */}
-            {(searchQuery || selectedTag) && (
-              <Button variant="outline" onClick={clearFilters}>
-                <X className="h-4 w-4 mr-2" />
-                Rensa
-              </Button>
-            )}
           </div>
 
           {/* Active Filters Display */}
@@ -238,6 +277,47 @@ export default function ContactsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Statistics Summary */}
+      {contacts.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Totala kontakter</p>
+                  <p className="text-2xl font-bold text-gray-900">{contacts.length}</p>
+                </div>
+                <Users className="h-8 w-8 text-blue-500" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Med SMS-godkännande</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {contacts.filter(c => c.sms_consent).length}
+                  </p>
+                </div>
+                <CheckCircle className="h-8 w-8 text-green-500" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Unika taggar</p>
+                  <p className="text-2xl font-bold text-purple-600">{allTags.length}</p>
+                </div>
+                <Tag className="h-8 w-8 text-purple-500" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Contacts List */}
       {filteredContacts.length > 0 ? (
@@ -276,7 +356,7 @@ export default function ContactsPage() {
                     <tr
                       key={contact.id}
                       className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => router.push(`/contacts/${contact.id}`)}
+                      onClick={() => router.push(`/dashboard/contacts/${contact.id}`)}
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
@@ -331,7 +411,7 @@ export default function ContactsPage() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <Link
-                          href={`/contacts/${contact.id}`}
+                          href={`/dashboard/contacts/${contact.id}`}
                           onClick={(e) => e.stopPropagation()}
                           className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                         >
@@ -371,7 +451,7 @@ export default function ContactsPage() {
               <p className="mb-6">
                 Börja med att lägga till din första kontakt
               </p>
-              <Link href="/contacts/new">
+              <Link href="/dashboard/contacts/new">
                 <Button>
                   <Plus className="h-4 w-4 mr-2" />
                   Lägg till kontakt

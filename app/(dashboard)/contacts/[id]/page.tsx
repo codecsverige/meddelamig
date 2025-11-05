@@ -23,12 +23,13 @@ import { useToast } from '@/components/ui/toast';
 
 interface Contact {
   id: string;
-  full_name: string;
+  name: string;
   phone: string;
   email: string | null;
   tags: string[] | null;
   notes: string | null;
-  gdpr_consent: boolean;
+  sms_consent: boolean;
+  marketing_consent: boolean;
   created_at: string;
 }
 
@@ -51,12 +52,13 @@ export default function ContactDetailPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({
-    full_name: '',
+    name: '',
     phone: '',
     email: '',
     tags: '',
     notes: '',
-    gdpr_consent: false,
+    sms_consent: false,
+    marketing_consent: false,
   });
 
   useEffect(() => {
@@ -77,12 +79,13 @@ export default function ContactDetailPage() {
 
       setContact(data);
       setFormData({
-        full_name: data.full_name,
+        name: data.name || '',
         phone: data.phone,
         email: data.email || '',
         tags: (data.tags || []).join(', '),
         notes: data.notes || '',
-        gdpr_consent: data.gdpr_consent,
+        sms_consent: data.sms_consent || false,
+        marketing_consent: data.marketing_consent || false,
       });
     } catch (error) {
       console.error('Error fetching contact:', error);
@@ -118,12 +121,13 @@ export default function ContactDetailPage() {
       const { error } = await supabase
         .from('contacts')
         .update({
-          full_name: formData.full_name,
+          name: formData.name,
           phone: formData.phone,
           email: formData.email || null,
           tags,
           notes: formData.notes || null,
-          gdpr_consent: formData.gdpr_consent,
+          sms_consent: formData.sms_consent,
+          marketing_consent: formData.marketing_consent,
         })
         .eq('id', params.id);
 
@@ -150,7 +154,7 @@ export default function ContactDetailPage() {
       if (error) throw error;
 
       showToast('Kontakt borttagen', 'success');
-      router.push('/contacts');
+      router.push('/dashboard/contacts');
     } catch (error) {
       console.error('Error deleting contact:', error);
       showToast('Kunde inte ta bort kontakt', 'error');
@@ -172,7 +176,7 @@ export default function ContactDetailPage() {
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
             Kontakt hittades inte
           </h2>
-          <Link href="/contacts">
+          <Link href="/dashboard/contacts">
             <Button>
               <ArrowLeft className="h-4 w-4 mr-2" />
               Tillbaka till kontakter
@@ -188,7 +192,7 @@ export default function ContactDetailPage() {
       {/* Header */}
       <div className="mb-6">
         <Link
-          href="/contacts"
+          href="/dashboard/contacts"
           className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -197,14 +201,14 @@ export default function ContactDetailPage() {
         
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">{contact.full_name}</h1>
+            <h1 className="text-3xl font-bold text-gray-900">{contact.name}</h1>
             <p className="text-gray-600 mt-1">
               Skapad {new Date(contact.created_at).toLocaleDateString('sv-SE')}
             </p>
           </div>
           
           <div className="flex gap-3">
-            <Link href={`/messages/send?contactId=${contact.id}`}>
+            <Link href={`/dashboard/messages/send?contactId=${contact.id}`}>
               <Button className="flex items-center gap-2">
                 <MessageSquare className="h-4 w-4" />
                 Skicka SMS
@@ -248,9 +252,9 @@ export default function ContactDetailPage() {
                     </label>
                     <input
                       type="text"
-                      value={formData.full_name}
+                      value={formData.name}
                       onChange={(e) =>
-                        setFormData({ ...formData, full_name: e.target.value })
+                        setFormData({ ...formData, name: e.target.value })
                       }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
@@ -313,19 +317,35 @@ export default function ContactDetailPage() {
                     />
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="gdpr"
-                      checked={formData.gdpr_consent}
-                      onChange={(e) =>
-                        setFormData({ ...formData, gdpr_consent: e.target.checked })
-                      }
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="gdpr" className="text-sm text-gray-700">
-                      GDPR-samtycke beviljat
-                    </label>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="sms_consent"
+                        checked={formData.sms_consent}
+                        onChange={(e) =>
+                          setFormData({ ...formData, sms_consent: e.target.checked })
+                        }
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="sms_consent" className="text-sm text-gray-700">
+                        SMS-godkännande
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="marketing_consent"
+                        checked={formData.marketing_consent}
+                        onChange={(e) =>
+                          setFormData({ ...formData, marketing_consent: e.target.checked })
+                        }
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="marketing_consent" className="text-sm text-gray-700">
+                        Marknadsförings-godkännande
+                      </label>
+                    </div>
                   </div>
 
                   <div className="flex gap-3 pt-4">
@@ -387,18 +407,33 @@ export default function ContactDetailPage() {
                     </div>
                   )}
 
-                  <div className="flex items-center gap-3 pt-2">
-                    {contact.gdpr_consent ? (
-                      <div className="flex items-center gap-2 text-green-700">
-                        <CheckCircle className="h-5 w-5" />
-                        <span className="text-sm font-medium">GDPR-samtycke beviljat</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-red-700">
-                        <XCircle className="h-5 w-5" />
-                        <span className="text-sm font-medium">Inget GDPR-samtycke</span>
-                      </div>
-                    )}
+                  <div className="space-y-2 pt-2">
+                    <div className="flex items-center gap-3">
+                      {contact.sms_consent ? (
+                        <div className="flex items-center gap-2 text-green-700">
+                          <CheckCircle className="h-5 w-5" />
+                          <span className="text-sm font-medium">SMS-godkännande beviljat</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-red-700">
+                          <XCircle className="h-5 w-5" />
+                          <span className="text-sm font-medium">Inget SMS-godkännande</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {contact.marketing_consent ? (
+                        <div className="flex items-center gap-2 text-green-700">
+                          <CheckCircle className="h-5 w-5" />
+                          <span className="text-sm font-medium">Marknadsförings-godkännande beviljat</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-gray-500">
+                          <XCircle className="h-5 w-5" />
+                          <span className="text-sm font-medium">Inget marknadsförings-godkännande</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -453,7 +488,7 @@ export default function ContactDetailPage() {
                 <div className="text-center py-8 text-gray-500">
                   <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
                   <p>Inga SMS skickade ännu</p>
-                  <Link href={`/messages/send?contactId=${contact.id}`} className="mt-3 inline-block">
+                  <Link href={`/dashboard/messages/send?contactId=${contact.id}`} className="mt-3 inline-block">
                     <Button size="sm">Skicka första SMS</Button>
                   </Link>
                 </div>
@@ -469,7 +504,7 @@ export default function ContactDetailPage() {
               <CardTitle className="text-lg">Snabbåtgärder</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Link href={`/messages/send?contactId=${contact.id}`} className="block">
+              <Link href={`/dashboard/messages/send?contactId=${contact.id}`} className="block">
                 <Button variant="outline" className="w-full justify-start">
                   <MessageSquare className="h-4 w-4 mr-2" />
                   Skicka SMS
