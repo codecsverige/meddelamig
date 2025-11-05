@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { formatPhoneNumber } from '@/lib/utils/phone';
@@ -20,6 +22,7 @@ export default function NewContactPage() {
     phone: '',
     email: '',
     tags: '',
+    notes: '',
     smsConsent: true,
     marketingConsent: false,
   });
@@ -64,7 +67,8 @@ export default function NewContactPage() {
         name: formData.name,
         phone: formattedPhone,
         email: formData.email || null,
-        tags: formData.tags ? formData.tags.split(',').map(t => t.trim()) : [],
+        tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(t => t) : [],
+        custom_fields: formData.notes ? { notes: formData.notes } : {},
         sms_consent: formData.smsConsent,
         marketing_consent: formData.marketingConsent,
         consent_date: new Date().toISOString(),
@@ -122,33 +126,29 @@ export default function NewContactPage() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
-                Namn *
-              </label>
-              <input
+              <Label htmlFor="name">Namn *</Label>
+              <Input
                 id="name"
                 name="name"
                 type="text"
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="mt-2"
                 placeholder="Anna Andersson"
               />
             </div>
 
             <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                Telefonnummer *
-              </label>
-              <input
+              <Label htmlFor="phone">Telefonnummer *</Label>
+              <Input
                 id="phone"
                 name="phone"
                 type="tel"
                 value={formData.phone}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="mt-2"
                 placeholder="070-123 45 67"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -157,36 +157,45 @@ export default function NewContactPage() {
             </div>
 
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                E-postadress (valfritt)
-              </label>
-              <input
+              <Label htmlFor="email">E-postadress (valfritt)</Label>
+              <Input
                 id="email"
                 name="email"
                 type="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="mt-2"
                 placeholder="anna@exempel.se"
               />
             </div>
 
             <div>
-              <label htmlFor="tags" className="block text-sm font-medium text-gray-700 mb-2">
-                Taggar (valfritt)
-              </label>
-              <input
+              <Label htmlFor="tags">Taggar (valfritt)</Label>
+              <Input
                 id="tags"
                 name="tags"
                 type="text"
                 value={formData.tags}
                 onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="mt-2"
                 placeholder="vip, regular, ny"
               />
               <p className="text-xs text-gray-500 mt-1">
                 Separera med komma (vip, regular, ny)
               </p>
+            </div>
+
+            <div>
+              <Label htmlFor="notes">Anteckningar (valfritt)</Label>
+              <Input
+                id="notes"
+                name="notes"
+                type="text"
+                value={formData.notes}
+                onChange={handleChange}
+                className="mt-2"
+                placeholder="Extra information om kontakten"
+              />
             </div>
 
             <div className="border-t border-gray-200 pt-6">

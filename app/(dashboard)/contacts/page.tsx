@@ -12,6 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ContactStats } from "@/components/contacts/contact-stats";
 import { Plus, Download, Upload, Search, Users, X } from "lucide-react";
 import { displayPhoneNumber } from "@/lib/utils/phone";
 import { useToast } from "@/components/ui/toast";
@@ -146,16 +148,42 @@ export default function ContactsPage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center">
-        <p className="text-gray-500">Laddar kontakter...</p>
+      <div className="p-4 lg:p-8">
+        <div className="mb-8">
+          <Skeleton className="h-10 w-64 mb-2" />
+          <Skeleton className="h-5 w-96" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-6">
+                <Skeleton className="h-20 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardContent className="p-6">
+            <Skeleton className="h-96 w-full" />
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
+  // Calculate stats
+  const contactsWithConsent = contacts.filter(c => c.sms_consent).length;
+  const totalSMSSent = contacts.reduce((sum, c) => sum + (c.total_sms_sent || 0), 0);
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const recentlyAdded = contacts.filter(
+    c => new Date(c.created_at) >= thirtyDaysAgo
+  ).length;
+
   return (
     <div className="p-4 lg:p-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Kontakter</h1>
           <p className="text-gray-600">Hantera dina kunder och kontakter</p>
@@ -183,6 +211,14 @@ export default function ContactsPage() {
           </Link>
         </div>
       </div>
+
+      {/* Stats */}
+      <ContactStats
+        totalContacts={contacts.length}
+        withConsent={contactsWithConsent}
+        totalSMS={totalSMSSent}
+        recentlyAdded={recentlyAdded}
+      />
 
       {/* Search & Filter */}
       <Card className="mb-6">
