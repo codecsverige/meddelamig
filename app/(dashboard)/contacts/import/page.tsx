@@ -25,9 +25,9 @@ export default function ImportContactsPage() {
   const [result, setResult] = useState<ImportResult | null>(null);
 
   const downloadTemplate = () => {
-    const csvContent = 'full_name,phone,email,tags,notes,gdpr_consent\n' +
-      'Anna Andersson,0701234567,anna@example.com,vip;stamkund,Älskar italiensk mat,true\n' +
-      'Erik Johansson,0709876543,erik@example.com,restaurant,Besöker ofta på fredagar,true\n';
+    const csvContent = 'name,phone,email,tags,sms_consent,marketing_consent\n' +
+      'Anna Andersson,0701234567,anna@example.com,vip;stamkund,true,false\n' +
+      'Erik Johansson,0709876543,erik@example.com,restaurant,true,true\n';
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -83,10 +83,6 @@ export default function ImportContactsPage() {
   };
 
   const validateContact = (contact: any, rowNumber: number): { valid: boolean; error?: string } => {
-    if (!contact.full_name || contact.full_name.length < 2) {
-      return { valid: false, error: `Rad ${rowNumber}: Ogiltigt namn` };
-    }
-
     if (!contact.phone) {
       return { valid: false, error: `Rad ${rowNumber}: Telefonnummer saknas` };
     }
@@ -154,12 +150,14 @@ export default function ImportContactsPage() {
         // Prepare data
         const contactData = {
           organization_id: userData.organization_id,
-          full_name: contact.full_name,
+          name: contact.name || null,
           phone: formatPhone(contact.phone),
           email: contact.email || null,
-          tags: contact.tags ? contact.tags.split(';').map((t: string) => t.trim()) : null,
-          notes: contact.notes || null,
-          gdpr_consent: contact.gdpr_consent === 'true' || contact.gdpr_consent === '1',
+          tags: contact.tags ? contact.tags.split(';').map((t: string) => t.trim()) : [],
+          sms_consent: contact.sms_consent === 'true' || contact.sms_consent === '1' || contact.sms_consent === true,
+          marketing_consent: contact.marketing_consent === 'true' || contact.marketing_consent === '1' || contact.marketing_consent === true,
+          consent_date: new Date().toISOString(),
+          consent_source: 'import',
         };
 
         // Insert
@@ -239,12 +237,12 @@ export default function ImportContactsPage() {
             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <h3 className="font-semibold text-blue-900 mb-2">Fältbeskrivning:</h3>
               <ul className="space-y-1 text-sm text-blue-800">
-                <li><strong>full_name</strong>: För- och efternamn (obligatorisk)</li>
+                <li><strong>name</strong>: För- och efternamn (valfri men rekommenderad)</li>
                 <li><strong>phone</strong>: Telefonnummer i format 070XXXXXXX eller +46XXXXXXXXX (obligatorisk)</li>
                 <li><strong>email</strong>: E-postadress (valfri)</li>
                 <li><strong>tags</strong>: Taggar separerade med semikolon (t.ex. vip;stamkund) (valfri)</li>
-                <li><strong>notes</strong>: Anteckningar (valfri)</li>
-                <li><strong>gdpr_consent</strong>: true eller false (obligatorisk)</li>
+                <li><strong>sms_consent</strong>: true eller false - för SMS-påminnelser (obligatorisk)</li>
+                <li><strong>marketing_consent</strong>: true eller false - för marknadsföring (obligatorisk)</li>
               </ul>
             </div>
 

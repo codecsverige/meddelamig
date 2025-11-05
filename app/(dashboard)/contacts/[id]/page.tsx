@@ -23,13 +23,20 @@ import { useToast } from '@/components/ui/toast';
 
 interface Contact {
   id: string;
-  full_name: string;
+  name: string | null;
   phone: string;
   email: string | null;
   tags: string[] | null;
-  notes: string | null;
-  gdpr_consent: boolean;
+  custom_fields: any;
+  sms_consent: boolean;
+  marketing_consent: boolean;
+  consent_date: string | null;
+  consent_source: string | null;
+  total_bookings: number;
+  total_sms_sent: number;
+  last_visit_date: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 interface SMSMessage {
@@ -51,12 +58,12 @@ export default function ContactDetailPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({
-    full_name: '',
+    name: '',
     phone: '',
     email: '',
     tags: '',
-    notes: '',
-    gdpr_consent: false,
+    sms_consent: true,
+    marketing_consent: false,
   });
 
   useEffect(() => {
@@ -77,12 +84,12 @@ export default function ContactDetailPage() {
 
       setContact(data);
       setFormData({
-        full_name: data.full_name,
+        name: data.name || '',
         phone: data.phone,
         email: data.email || '',
         tags: (data.tags || []).join(', '),
-        notes: data.notes || '',
-        gdpr_consent: data.gdpr_consent,
+        sms_consent: data.sms_consent,
+        marketing_consent: data.marketing_consent,
       });
     } catch (error) {
       console.error('Error fetching contact:', error);
@@ -118,12 +125,12 @@ export default function ContactDetailPage() {
       const { error } = await supabase
         .from('contacts')
         .update({
-          full_name: formData.full_name,
+          name: formData.name,
           phone: formData.phone,
           email: formData.email || null,
           tags,
-          notes: formData.notes || null,
-          gdpr_consent: formData.gdpr_consent,
+          sms_consent: formData.sms_consent,
+          marketing_consent: formData.marketing_consent,
         })
         .eq('id', params.id);
 
@@ -197,7 +204,7 @@ export default function ContactDetailPage() {
         
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">{contact.full_name}</h1>
+            <h1 className="text-3xl font-bold text-gray-900">{contact.name || 'Namnlös kontakt'}</h1>
             <p className="text-gray-600 mt-1">
               Skapad {new Date(contact.created_at).toLocaleDateString('sv-SE')}
             </p>
@@ -248,9 +255,9 @@ export default function ContactDetailPage() {
                     </label>
                     <input
                       type="text"
-                      value={formData.full_name}
+                      value={formData.name}
                       onChange={(e) =>
-                        setFormData({ ...formData, full_name: e.target.value })
+                        setFormData({ ...formData, name: e.target.value })
                       }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
@@ -299,33 +306,44 @@ export default function ContactDetailPage() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Anteckningar
-                    </label>
-                    <textarea
-                      value={formData.notes}
-                      onChange={(e) =>
-                        setFormData({ ...formData, notes: e.target.value })
-                      }
-                      rows={4}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="gdpr"
-                      checked={formData.gdpr_consent}
-                      onChange={(e) =>
-                        setFormData({ ...formData, gdpr_consent: e.target.checked })
-                      }
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="gdpr" className="text-sm text-gray-700">
-                      GDPR-samtycke beviljat
-                    </label>
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-medium text-gray-900 mb-3">GDPR-samtycken</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          id="sms_consent"
+                          checked={formData.sms_consent}
+                          onChange={(e) =>
+                            setFormData({ ...formData, sms_consent: e.target.checked })
+                          }
+                          className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <div>
+                          <label htmlFor="sms_consent" className="text-sm font-medium text-gray-900 cursor-pointer">
+                            SMS-påminnelser
+                          </label>
+                          <p className="text-xs text-gray-500">Godkännande för bokningsbekräftelser och påminnelser</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          id="marketing_consent"
+                          checked={formData.marketing_consent}
+                          onChange={(e) =>
+                            setFormData({ ...formData, marketing_consent: e.target.checked })
+                          }
+                          className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <div>
+                          <label htmlFor="marketing_consent" className="text-sm font-medium text-gray-900 cursor-pointer">
+                            Marknadsföring
+                          </label>
+                          <p className="text-xs text-gray-500">Godkännande för erbjudanden och kampanjer</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex gap-3 pt-4">
@@ -377,28 +395,35 @@ export default function ContactDetailPage() {
                     </div>
                   )}
 
-                  {contact.notes && (
-                    <div className="flex items-start gap-3">
-                      <Calendar className="h-5 w-5 text-gray-400 mt-0.5" />
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">Anteckningar</p>
-                        <p className="text-gray-700">{contact.notes}</p>
+                  <div className="pt-4 border-t">
+                    <p className="text-sm font-medium text-gray-900 mb-3">GDPR-samtycken</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        {contact.sms_consent ? (
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                        ) : (
+                          <XCircle className="h-5 w-5 text-red-600" />
+                        )}
+                        <span className={`text-sm ${contact.sms_consent ? 'text-green-700' : 'text-red-700'}`}>
+                          {contact.sms_consent ? 'SMS-påminnelser aktiverade' : 'SMS-påminnelser inaktiverade'}
+                        </span>
                       </div>
+                      <div className="flex items-center gap-2">
+                        {contact.marketing_consent ? (
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                        ) : (
+                          <XCircle className="h-5 w-5 text-gray-400" />
+                        )}
+                        <span className={`text-sm ${contact.marketing_consent ? 'text-green-700' : 'text-gray-500'}`}>
+                          {contact.marketing_consent ? 'Marknadsföring aktiverad' : 'Marknadsföring inaktiverad'}
+                        </span>
+                      </div>
+                      {contact.consent_date && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          Samtycke givet: {new Date(contact.consent_date).toLocaleDateString('sv-SE')}
+                        </p>
+                      )}
                     </div>
-                  )}
-
-                  <div className="flex items-center gap-3 pt-2">
-                    {contact.gdpr_consent ? (
-                      <div className="flex items-center gap-2 text-green-700">
-                        <CheckCircle className="h-5 w-5" />
-                        <span className="text-sm font-medium">GDPR-samtycke beviljat</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-red-700">
-                        <XCircle className="h-5 w-5" />
-                        <span className="text-sm font-medium">Inget GDPR-samtycke</span>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
@@ -494,7 +519,7 @@ export default function ContactDetailPage() {
             <CardContent className="space-y-3">
               <div>
                 <p className="text-sm text-gray-500">Totalt SMS skickat</p>
-                <p className="text-2xl font-bold text-gray-900">{smsHistory.length}</p>
+                <p className="text-2xl font-bold text-gray-900">{contact.total_sms_sent || smsHistory.length}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Levererade</p>
@@ -503,10 +528,16 @@ export default function ContactDetailPage() {
                 </p>
               </div>
               <div>
+                <p className="text-sm text-gray-500">Total bokningar</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {contact.total_bookings || 0}
+                </p>
+              </div>
+              <div>
                 <p className="text-sm text-gray-500">Total kostnad</p>
                 <p className="text-2xl font-bold text-gray-900">
                   {smsHistory
-                    .reduce((sum, s) => sum + parseFloat(s.cost), 0)
+                    .reduce((sum, s) => sum + (parseFloat(s.cost) || 0), 0)
                     .toFixed(2)}{' '}
                   SEK
                 </p>
