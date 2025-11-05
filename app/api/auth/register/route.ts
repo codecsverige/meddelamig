@@ -62,22 +62,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const {
-      data: existing,
-      error: existingError,
-    } = await adminClient.auth.admin.listUsers({ email });
-
-    if (existingError) {
-      throw new Error(existingError.message || 'Kunde inte kontrollera befintligt konto');
-    }
-
-    if (existing?.users?.length) {
-      return NextResponse.json(
-        { error: 'Det finns redan ett konto med denna e-postadress' },
-        { status: 409 }
-      );
-    }
-
     const { data: userData, error: createUserError } = await adminClient.auth.admin.createUser({
       email,
       password,
@@ -88,6 +72,13 @@ export async function POST(request: Request) {
     });
 
     if (createUserError || !userData?.user) {
+      if (createUserError?.message?.toLowerCase().includes('already registered')) {
+        return NextResponse.json(
+          { error: 'Det finns redan ett konto med denna e-postadress' },
+          { status: 409 }
+        );
+      }
+
       throw new Error(createUserError?.message || 'Kunde inte skapa användare');
     }
 
