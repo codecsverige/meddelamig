@@ -7,14 +7,13 @@ type RegisterPayload = {
   email?: string;
   password?: string;
   organizationName?: string;
-  industry?: 'restaurant' | 'salon' | 'workshop' | 'b2b';
+  industry?: Database['public']['Tables']['organizations']['Row']['industry'];
   acceptTerms?: boolean;
 };
 
 const MIN_PASSWORD_LENGTH = 8;
 
 type OrganizationsInsert = Database['public']['Tables']['organizations']['Insert'];
-
 const generateSlug = (input: string) => {
   const base = input
     .toLowerCase()

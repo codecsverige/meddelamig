@@ -52,10 +52,16 @@ export default async function AnalyticsPage() {
   ]);
 
   // Calculate metrics
-  const delivered = smsData?.filter((s) => s.status === 'delivered').length || 0;
-  const failed = smsData?.filter((s) => s.status === 'failed').length || 0;
+  const smsList = (smsData ?? []) as Array<{
+    status: string;
+    cost: number | null;
+    created_at: string;
+  }>;
+
+  const delivered = smsList.filter((s) => s.status === 'delivered').length || 0;
+  const failed = smsList.filter((s) => s.status === 'failed').length || 0;
   const deliveryRate = totalSMS ? ((delivered / (totalSMS || 1)) * 100).toFixed(1) : '0';
-  const totalCost = smsData?.reduce((sum, s) => sum + (parseFloat(s.cost || '0')), 0) || 0;
+  const totalCost = smsList.reduce((sum, s) => sum + (s.cost ?? 0), 0);
 
   // Group by date
   const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -65,7 +71,7 @@ export default async function AnalyticsPage() {
   }).reverse();
 
   const smsByDate = last7Days.map((date) => {
-    const count = smsData?.filter((s) => s.created_at.startsWith(date)).length || 0;
+    const count = smsList.filter((s) => s.created_at.startsWith(date)).length || 0;
     return { date, count };
   });
 
@@ -117,17 +123,17 @@ export default async function AnalyticsPage() {
     },
     {
       status: 'Skickade',
-      count: smsData?.filter((s) => s.status === 'sent').length || 0,
+      count: smsList.filter((s) => s.status === 'sent').length || 0,
       percentage: totalSMS
-        ? (((smsData?.filter((s) => s.status === 'sent').length || 0) / totalSMS) * 100).toFixed(1)
+        ? (((smsList.filter((s) => s.status === 'sent').length || 0) / totalSMS) * 100).toFixed(1)
         : '0',
       color: 'bg-blue-500',
     },
     {
       status: 'Väntande',
-      count: smsData?.filter((s) => s.status === 'pending').length || 0,
+      count: smsList.filter((s) => s.status === 'pending').length || 0,
       percentage: totalSMS
-        ? (((smsData?.filter((s) => s.status === 'pending').length || 0) / totalSMS) * 100).toFixed(1)
+        ? (((smsList.filter((s) => s.status === 'pending').length || 0) / totalSMS) * 100).toFixed(1)
         : '0',
       color: 'bg-yellow-500',
     },

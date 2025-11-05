@@ -67,6 +67,7 @@ export interface Database {
           updated_at?: string
           deleted_at?: string | null
         }
+        Relationships: []
       }
       users: {
         Row: {
@@ -108,6 +109,7 @@ export interface Database {
           created_at?: string
           last_login_at?: string | null
         }
+        Relationships: []
       }
       contacts: {
         Row: {
@@ -167,6 +169,7 @@ export interface Database {
           updated_at?: string
           deleted_at?: string | null
         }
+        Relationships: []
       }
       sms_messages: {
         Row: {
@@ -226,6 +229,7 @@ export interface Database {
           scheduled_for?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       sms_templates: {
         Row: {
@@ -264,6 +268,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       campaigns: {
         Row: {
@@ -320,6 +325,7 @@ export interface Database {
           created_at?: string
           completed_at?: string | null
         }
+        Relationships: []
       }
       audit_logs: {
         Row: {
@@ -358,6 +364,7 @@ export interface Database {
           user_agent?: string | null
           created_at?: string
         }
+        Relationships: []
       }
     }
     Views: {
