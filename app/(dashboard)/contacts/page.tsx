@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Download, Upload, Search, Users, X } from 'lucide-react';
 import { displayPhoneNumber } from '@/lib/utils/phone';
+import { useToast } from '@/components/ui/toast';
 
 export default function ContactsPage() {
   const router = useRouter();
@@ -19,6 +20,9 @@ export default function ContactsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
+
+  const { showToast } = useToast();
 
   useEffect(() => {
     loadContacts();
@@ -98,6 +102,37 @@ export default function ContactsPage() {
     setSelectedTag('');
   };
 
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const response = await fetch('/api/contacts/export');
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || 'Misslyckades med att exportera kontakter');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const timestamp = new Date().toISOString().split('T')[0];
+
+      link.href = url;
+      link.download = `meddela-kontakter-${timestamp}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      showToast('Kontakter exporterades!', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Ett oväntat fel uppstod';
+      showToast(message, 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center">
@@ -117,9 +152,13 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button variant="outline" disabled>
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={exporting || contacts.length === 0}
+          >
             <Download className="h-4 w-4 mr-2" />
-            Exportera
+            {exporting ? 'Exporterar...' : 'Exportera'}
           </Button>
           <Link href="/contacts/import">
             <Button variant="outline">
