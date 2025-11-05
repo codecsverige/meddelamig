@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Plus, Download, Upload, Search, Users, X } from "lucide-react";
+import { Plus, Download, Upload, Search, Users, X, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { displayPhoneNumber } from "@/lib/utils/phone";
 import { useToast } from "@/components/ui/toast";
 
@@ -27,6 +27,12 @@ export default function ContactsPage() {
   const [selectedTag, setSelectedTag] = useState("");
   const [allTags, setAllTags] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
 
   const { showToast } = useToast();
 
@@ -76,6 +82,7 @@ export default function ContactsPage() {
       setAllTags(Array.from(tags));
     } catch (error) {
       console.error("Failed to load contacts:", error);
+      showToast("Kunde inte ladda kontakter", "error");
     } finally {
       setLoading(false);
     }
@@ -103,6 +110,7 @@ export default function ContactsPage() {
     }
 
     setFilteredContacts(filtered);
+    setCurrentPage(1); // Reset to first page when filtering
   };
 
   const clearFilters = () => {
@@ -142,6 +150,65 @@ export default function ContactsPage() {
     } finally {
       setExporting(false);
     }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedContacts.size === paginatedContacts.length) {
+      setSelectedContacts(new Set());
+    } else {
+      setSelectedContacts(new Set(paginatedContacts.map(c => c.id)));
+    }
+  };
+
+  const toggleSelectContact = (id: string) => {
+    const newSelected = new Set(selectedContacts);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedContacts(newSelected);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedContacts.size === 0) return;
+    
+    const confirmed = confirm(
+      `Är du säker på att du vill ta bort ${selectedContacts.size} kontakt(er)?`
+    );
+    
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+      const now = new Date().toISOString();
+      
+      const { error } = await supabase
+        .from("contacts")
+        .update({ deleted_at: now })
+        .in("id", Array.from(selectedContacts));
+
+      if (error) throw error;
+
+      showToast(`${selectedContacts.size} kontakt(er) borttagen`, "success");
+      setSelectedContacts(new Set());
+      await loadContacts();
+    } catch (error) {
+      console.error("Bulk delete error:", error);
+      showToast("Kunde inte ta bort kontakter", "error");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredContacts.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedContacts = filteredContacts.slice(startIndex, endIndex);
+
+  const goToPage = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
   if (loading) {
@@ -214,6 +281,21 @@ export default function ContactsPage() {
               ))}
             </select>
 
+            {/* Items per page */}
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[120px]"
+            >
+              <option value="10">10 per sida</option>
+              <option value="20">20 per sida</option>
+              <option value="50">50 per sida</option>
+              <option value="100">100 per sida</option>
+            </select>
+
             {/* Clear Filters */}
             {(searchQuery || selectedTag) && (
               <Button variant="outline" onClick={clearFilters}>
@@ -236,115 +318,226 @@ export default function ContactsPage() {
               )}
             </div>
           )}
+
+          {/* Bulk Actions */}
+          {selectedContacts.size > 0 && (
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+              <span className="text-sm font-medium text-blue-900">
+                {selectedContacts.size} kontakt(er) valda
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedContacts(new Set())}
+                >
+                  Avmarkera alla
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBulkDelete}
+                  disabled={deleting}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {deleting ? "Tar bort..." : "Ta bort valda"}
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Contacts List */}
       {filteredContacts.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Alla kontakter ({filteredContacts.length})</CardTitle>
-            <CardDescription>En lista över alla dina kontakter</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">
-                      Namn
-                    </th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">
-                      Telefon
-                    </th>
-                    <th className="hidden md:table-cell text-left py-3 px-4 font-medium text-gray-700">
-                      E-post
-                    </th>
-                    <th className="hidden lg:table-cell text-left py-3 px-4 font-medium text-gray-700">
-                      Taggar
-                    </th>
-                    <th className="hidden sm:table-cell text-left py-3 px-4 font-medium text-gray-700">
-                      SMS
-                    </th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-700">
-                      Åtgärder
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredContacts.map((contact: any) => (
-                    <tr
-                      key={contact.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => router.push(`/contacts/${contact.id}`)}
-                    >
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
-                            {(contact.name || "U").charAt(0).toUpperCase()}
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Alla kontakter ({filteredContacts.length})</CardTitle>
+              <CardDescription>
+                Visar {startIndex + 1}-{Math.min(endIndex, filteredContacts.length)} av {filteredContacts.length}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-3 px-4 w-12">
+                        <input
+                          type="checkbox"
+                          checked={selectedContacts.size === paginatedContacts.length && paginatedContacts.length > 0}
+                          onChange={toggleSelectAll}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                      </th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-700">
+                        Namn
+                      </th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-700">
+                        Telefon
+                      </th>
+                      <th className="hidden md:table-cell text-left py-3 px-4 font-medium text-gray-700">
+                        E-post
+                      </th>
+                      <th className="hidden lg:table-cell text-left py-3 px-4 font-medium text-gray-700">
+                        Taggar
+                      </th>
+                      <th className="hidden sm:table-cell text-left py-3 px-4 font-medium text-gray-700">
+                        SMS
+                      </th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-700">
+                        Åtgärder
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedContacts.map((contact: any) => (
+                      <tr
+                        key={contact.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
+                      >
+                        <td className="py-3 px-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedContacts.has(contact.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleSelectContact(contact.id);
+                            }}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                        </td>
+                        <td 
+                          className="py-3 px-4 cursor-pointer"
+                          onClick={() => router.push(`/contacts/${contact.id}`)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
+                              {(contact.name || "U").charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-900 truncate">
+                                {contact.name || "Unnamed"}
+                              </p>
+                              {contact.sms_consent ? (
+                                <p className="text-xs text-green-600">
+                                  ✓ SMS-godkännande
+                                </p>
+                              ) : (
+                                <p className="text-xs text-gray-400">
+                                  Inget godkännande
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <p className="font-medium text-gray-900 truncate">
-                              {contact.name || "Unnamed"}
-                            </p>
-                            {contact.sms_consent ? (
-                              <p className="text-xs text-green-600">
-                                ✓ SMS-godkännande
-                              </p>
+                        </td>
+                        <td className="py-3 px-4 text-gray-700">
+                          {displayPhoneNumber(contact.phone)}
+                        </td>
+                        <td className="hidden md:table-cell py-3 px-4 text-gray-700 truncate max-w-[200px]">
+                          {contact.email || "-"}
+                        </td>
+                        <td className="hidden lg:table-cell py-3 px-4">
+                          <div className="flex gap-1 flex-wrap">
+                            {contact.tags && contact.tags.length > 0 ? (
+                              contact.tags.slice(0, 2).map((tag: string) => (
+                                <span
+                                  key={tag}
+                                  className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full"
+                                >
+                                  {tag}
+                                </span>
+                              ))
                             ) : (
-                              <p className="text-xs text-gray-400">
-                                Inget godkännande
-                              </p>
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
+                            {contact.tags && contact.tags.length > 2 && (
+                              <span className="text-xs text-gray-500">
+                                +{contact.tags.length - 2}
+                              </span>
                             )}
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-gray-700">
-                        {displayPhoneNumber(contact.phone)}
-                      </td>
-                      <td className="hidden md:table-cell py-3 px-4 text-gray-700 truncate max-w-[200px]">
-                        {contact.email || "-"}
-                      </td>
-                      <td className="hidden lg:table-cell py-3 px-4">
-                        <div className="flex gap-1 flex-wrap">
-                          {contact.tags && contact.tags.length > 0 ? (
-                            contact.tags.slice(0, 2).map((tag: string) => (
-                              <span
-                                key={tag}
-                                className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full"
-                              >
-                                {tag}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-xs text-gray-400">-</span>
-                          )}
-                          {contact.tags && contact.tags.length > 2 && (
-                            <span className="text-xs text-gray-500">
-                              +{contact.tags.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="hidden sm:table-cell py-3 px-4 text-gray-700">
-                        {contact.total_sms_sent || 0}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <Link
-                          href={`/contacts/${contact.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                        >
-                          Visa
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        </td>
+                        <td className="hidden sm:table-cell py-3 px-4 text-gray-700">
+                          {contact.total_sms_sent || 0}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <Link
+                            href={`/contacts/${contact.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                          >
+                            Visa
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-6 flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Sida {currentPage} av {totalPages}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Föregående
+                </Button>
+                
+                {/* Page numbers */}
+                <div className="hidden sm:flex gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => goToPage(pageNum)}
+                        className="w-10"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Nästa
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </>
       ) : contacts.length > 0 ? (
         <Card>
           <CardContent className="py-12">
