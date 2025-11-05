@@ -62,8 +62,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const existing = await adminClient.auth.admin.getUserByEmail(email);
-    if (existing.data?.user) {
+    const {
+      data: existing,
+      error: existingError,
+    } = await adminClient.auth.admin.listUsers({ email });
+
+    if (existingError) {
+      throw new Error(existingError.message || 'Kunde inte kontrollera befintligt konto');
+    }
+
+    if (existing?.users?.length) {
       return NextResponse.json(
         { error: 'Det finns redan ett konto med denna e-postadress' },
         { status: 409 }
