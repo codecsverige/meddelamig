@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 import type { Database } from '@/lib/supabase/types';
-import type { SupabaseClient } from '@supabase/supabase-js';
 
 type RegisterPayload = {
   fullName?: string;
@@ -31,12 +30,12 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: Request) {
-  let adminClient: SupabaseClient<Database> | null = null;
+  let adminClient: ReturnType<typeof createAdminClient> | null = null;
   let createdUserId: string | null = null;
   let createdOrganizationId: string | null = null;
 
   try {
-    const supabase: SupabaseClient<Database> = createAdminClient();
+    const supabase = createAdminClient();
     adminClient = supabase;
 
     const payload = (await request.json()) as RegisterPayload;
@@ -125,8 +124,7 @@ export async function POST(request: Request) {
     const {
       data: organization,
       error: orgError,
-    } = await supabase
-      .from('organizations')
+    } = await (supabase.from('organizations') as any)
       .insert(organizationInsert)
       .select()
       .single();
@@ -137,8 +135,7 @@ export async function POST(request: Request) {
 
     createdOrganizationId = organization.id;
 
-    const { error: updateUserError } = await supabase
-      .from('users')
+    const { error: updateUserError } = await (supabase.from('users') as any)
       .update({
         organization_id: organization.id,
         role: 'owner',
