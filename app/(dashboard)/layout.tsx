@@ -67,6 +67,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { name: 'Kontakter', href: '/contacts', icon: Users },
     { name: 'Meddelanden', href: '/messages', icon: MessageSquare },
     { name: 'Kampanjer', href: '/campaigns', icon: Send },
+    { name: 'Mallar', href: '/templates', icon: MessageSquare },
     { name: 'Analys', href: '/analytics', icon: BarChart3 },
     { name: 'Inställningar', href: '/settings', icon: Settings },
   ];

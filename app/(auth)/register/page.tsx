@@ -56,47 +56,23 @@ function RegisterForm() {
     }
 
     try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fullName: formData.fullName,
-          email: formData.email,
-          password: formData.password,
-          organizationName: formData.organizationName,
-          industry: formData.industry,
-          acceptTerms: formData.acceptTerms,
-        }),
-      });
-
-      let result: any = null;
-
-      try {
-        result = await response.json();
-      } catch (jsonError) {
-        result = null;
-      }
-
-      if (!response.ok) {
-        const message =
-          result?.error ||
-          (response.status === 500
-            ? 'Ett oväntat fel uppstod på servern'
-            : `Registreringen misslyckades (${response.status})`);
-        throw new Error(message);
-      }
-
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      // Create user with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
+        options: {
+          data: {
+            full_name: formData.fullName,
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
       });
 
-      if (signInError) {
-        throw signInError;
-      }
+      if (authError) throw authError;
 
-      if (signInData.session) {
-        router.push('/dashboard?welcome=true');
+      if (authData.user) {
+        // Redirect to onboarding to complete setup
+        router.push('/onboarding');
         router.refresh();
       }
     } catch (err: any) {
