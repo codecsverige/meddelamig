@@ -53,11 +53,7 @@ export async function POST(request: Request) {
       .from('users')
       .select('id, organization_id, role')
       .eq('id', session.user.id)
-      .single<{
-        id: string;
-        organization_id: string | null;
-        role: 'owner' | 'admin' | 'member';
-      }>();
+      .single();
 
     if (userError) {
       throw new Error(userError.message || 'Kunde inte hämta användardata');

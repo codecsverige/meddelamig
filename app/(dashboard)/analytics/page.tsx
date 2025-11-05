@@ -18,7 +18,7 @@ export default async function AnalyticsPage() {
     .from('users')
     .select('organization_id')
     .eq('id', session.user.id)
-    .single<{ organization_id: string | null }>();
+    .single();
 
   if (!user?.organization_id) {
     redirect('/onboarding');
