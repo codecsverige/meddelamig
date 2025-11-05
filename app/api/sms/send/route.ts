@@ -1,9 +1,20 @@
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { elksClient } from "@/lib/46elks/client";
-import { resolvePlaceholders } from "@/lib/utils/placeholders";
-import { calculateSMSSegments } from "@/lib/utils/sms";
+
+import {
+  SmsCreditError,
+  SmsPlaceholderError,
+  SmsServiceError,
+  sendPersonalizedSMS,
+} from "@/lib/services/sms";
+
+const ALLOWED_MESSAGE_TYPES = new Set([
+  "manual",
+  "marketing",
+  "reminder",
+  "confirmation",
+]);
 
 export async function POST(request: Request) {
   try {
@@ -33,7 +44,8 @@ export async function POST(request: Request) {
     }
 
     // Get request body
-    const { contactId, message, templateId } = await request.json();
+    const { contactId, message, templateId, messageType } =
+      await request.json();
 
     if (!contactId || !message) {
       return NextResponse.json(
@@ -42,134 +54,50 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get contact
-    const { data: contact, error: contactError } = await supabase
-      .from("contacts")
-      .select("*")
-      .eq("id", contactId)
-      .eq("organization_id", user.organization_id)
-      .eq("sms_consent", true)
-      .single();
+    const resolvedMessageType =
+      typeof messageType === "string" && ALLOWED_MESSAGE_TYPES.has(messageType)
+        ? messageType
+        : "manual";
 
-    if (contactError || !contact) {
-      return NextResponse.json(
-        { error: "Contact not found or no SMS consent" },
-        { status: 404 },
-      );
-    }
-
-    // Get organization settings
-    const { data: org } = await supabase
-      .from("organizations")
-      .select("sms_sender_name, sms_credits, name, plan")
-      .eq("id", user.organization_id)
-      .single();
-
-    if (!org) {
-      return NextResponse.json(
-        { error: "Organization not found" },
-        { status: 400 },
-      );
-    }
-
-    // Check SMS credits
-    if ((org.sms_credits ?? 0) <= 0) {
-      return NextResponse.json(
-        { error: "Insufficient SMS credits" },
-        { status: 402 },
-      );
-    }
-
-    const { rendered: personalizedMessage, unmatched } = resolvePlaceholders(
+    const result = await sendPersonalizedSMS({
+      supabase,
+      organizationId: user.organization_id,
+      userId: session.user.id,
+      contactId,
       message,
-      {
-        contact,
-        organization: org,
-      },
-    );
-
-    if (unmatched.length > 0) {
-      return NextResponse.json(
-        {
-          error: `Okända placeholders: ${unmatched.join(", ")}`,
-        },
-        { status: 400 },
-      );
-    }
-
-    const segments = calculateSMSSegments(personalizedMessage);
-
-    if (segments <= 0) {
-      return NextResponse.json(
-        { error: "Meddelandet verkar vara tomt efter personalisering" },
-        { status: 400 },
-      );
-    }
-
-    if ((org.sms_credits ?? 0) < segments) {
-      return NextResponse.json(
-        {
-          error: `Otillräckliga SMS-krediter. Meddelandet kräver ${segments} kredit(er).`,
-        },
-        { status: 402 },
-      );
-    }
-
-    // Send SMS via 46elks
-    const smsResult = await elksClient.sendSMS({
-      to: contact.phone,
-      message: personalizedMessage,
-      from: org.sms_sender_name || "MEDDELA",
+      templateId,
+      messageType: resolvedMessageType,
     });
-
-    // Check if SMS failed
-    if ("code" in smsResult) {
-      throw new Error(smsResult.message);
-    }
-
-    // Save SMS to database
-    const { error: insertError } = await supabase.from("sms_messages").insert({
-      organization_id: user.organization_id,
-      contact_id: contactId,
-      user_id: session.user.id,
-      to_phone: contact.phone,
-      message: personalizedMessage,
-      sender_name: org.sms_sender_name || "MEDDELA",
-      type: "manual",
-      template_id: templateId || null,
-      status: "sent",
-      sent_at: new Date().toISOString(),
-      external_id: smsResult.id,
-      cost: smsResult.cost,
-    });
-
-    if (insertError) {
-      console.error("Failed to save SMS to database:", insertError);
-    }
-
-    // Update contact stats
-    await supabase
-      .from("contacts")
-      .update({
-        total_sms_sent: (contact.total_sms_sent || 0) + 1,
-      })
-      .eq("id", contactId);
-
-    // Deduct SMS credits
-    await supabase
-      .from("organizations")
-      .update({
-        sms_credits: (org.sms_credits ?? 0) - segments,
-      })
-      .eq("id", user.organization_id);
 
     return NextResponse.json({
       success: true,
-      smsId: smsResult.id,
-      cost: smsResult.cost,
+      smsId: result.smsId,
+      cost: result.cost,
     });
   } catch (error: any) {
     console.error("SMS send error:", error);
+
+    if (error instanceof SmsPlaceholderError) {
+      return NextResponse.json(
+        { error: error.message, placeholders: error.tokens },
+        { status: error.statusCode },
+      );
+    }
+
+    if (error instanceof SmsCreditError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.statusCode },
+      );
+    }
+
+    if (error instanceof SmsServiceError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.statusCode },
+      );
+    }
+
     return NextResponse.json(
       { error: error.message || "Failed to send SMS" },
       { status: 500 },
