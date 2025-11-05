@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       contactId,
       message,
       templateId,
-      messageType: resolvedMessageType,
+      messageType: resolvedMessageType as "marketing" | "reminder" | "confirmation" | "manual",
     });
 
     return NextResponse.json({
