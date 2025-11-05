@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { PostgrestSingleResponse } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database } from '@/lib/supabase/types';
 
@@ -106,8 +107,8 @@ export async function POST(request: Request) {
       slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
     }
 
-    const { data: organization, error: orgError } = await adminClient
-      .from<Database['public']['Tables']['organizations']['Row']>('organizations')
+    const organizationResult = await (adminClient
+      .from('organizations') as any)
       .insert({
         name: organizationName,
         slug,
@@ -119,14 +120,18 @@ export async function POST(request: Request) {
       .select()
       .single();
 
+    const { data: organization, error: orgError } = organizationResult as PostgrestSingleResponse<
+      Database['public']['Tables']['organizations']['Row']
+    >;
+
     if (orgError || !organization) {
       throw new Error(orgError?.message || 'Kunde inte skapa organisation');
     }
 
     createdOrganizationId = organization.id;
 
-    const { error: updateUserError } = await adminClient
-      .from('users')
+    const { error: updateUserError } = await (adminClient
+      .from('users') as any)
       .update({
         organization_id: organization.id,
         role: 'owner',

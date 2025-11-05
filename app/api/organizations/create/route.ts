@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import type { PostgrestSingleResponse } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Database } from '@/lib/supabase/types';
 
@@ -47,11 +48,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const { data: userRecord, error: userError } = await adminClient
-      .from('users')
+    const userResult = await (adminClient.from('users') as any)
       .select('id, organization_id, role')
       .eq('id', session.user.id)
       .single();
+
+    const { data: userRecord, error: userError } = userResult as PostgrestSingleResponse<
+      Pick<Database['public']['Tables']['users']['Row'], 'id' | 'organization_id' | 'role'>
+    >;
 
     if (userError) {
       throw new Error(userError.message || 'Kunde inte hämta användardata');
@@ -81,8 +85,7 @@ export async function POST(request: Request) {
       slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
     }
 
-    const { data: organization, error: organizationError } = await adminClient
-      .from<Database['public']['Tables']['organizations']['Row']>('organizations')
+    const organizationResult = await (adminClient.from('organizations') as any)
       .insert({
         name,
         slug,
@@ -94,14 +97,17 @@ export async function POST(request: Request) {
       .select()
       .single();
 
+    const { data: organization, error: organizationError } = organizationResult as PostgrestSingleResponse<
+      Database['public']['Tables']['organizations']['Row']
+    >;
+
     if (organizationError || !organization) {
       throw new Error(organizationError?.message || 'Kunde inte skapa organisation');
     }
 
     createdOrganizationId = organization.id;
 
-    const { error: updateError } = await adminClient
-      .from('users')
+    const { error: updateError } = await (adminClient.from('users') as any)
       .update({
         organization_id: organization.id,
         role: 'owner',
