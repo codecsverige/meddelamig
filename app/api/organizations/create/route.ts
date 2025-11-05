@@ -9,6 +9,8 @@ type CreateOrganizationPayload = {
   industry?: 'restaurant' | 'salon' | 'workshop' | 'b2b';
 };
 
+type OrganizationsInsert = Database['public']['Tables']['organizations']['Insert'];
+
 const generateSlug = (input: string) => {
   const base = input
     .toLowerCase()
@@ -51,7 +53,11 @@ export async function POST(request: Request) {
       .from('users')
       .select('id, organization_id, role')
       .eq('id', session.user.id)
-      .single();
+      .single<{
+        id: string;
+        organization_id: string | null;
+        role: 'owner' | 'admin' | 'member';
+      }>();
 
     if (userError) {
       throw new Error(userError.message || 'Kunde inte hämta användardata');
@@ -81,16 +87,18 @@ export async function POST(request: Request) {
       slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
     }
 
-    const { data: organization, error: organizationError } = await adminClient
-      .from<Database['public']['Tables']['organizations']['Row']>('organizations')
-      .insert({
-        name,
-        slug,
-        industry,
-        plan: 'starter',
-        sms_credits: 25,
-        subscription_status: 'trial',
-      })
+    const organizationInsert: OrganizationsInsert = {
+      name,
+      slug,
+      industry,
+      plan: 'starter',
+      sms_credits: 25,
+      subscription_status: 'trial',
+    };
+
+    const { data: organization, error: organizationError } = await (adminClient as any)
+      .from('organizations')
+      .insert(organizationInsert)
       .select()
       .single();
 
@@ -100,7 +108,7 @@ export async function POST(request: Request) {
 
     createdOrganizationId = organization.id;
 
-    const { error: updateError } = await adminClient
+    const { error: updateError } = await (adminClient as any)
       .from('users')
       .update({
         organization_id: organization.id,

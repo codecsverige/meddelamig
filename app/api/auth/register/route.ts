@@ -13,6 +13,8 @@ type RegisterPayload = {
 
 const MIN_PASSWORD_LENGTH = 8;
 
+type OrganizationsInsert = Database['public']['Tables']['organizations']['Insert'];
+
 const generateSlug = (input: string) => {
   const base = input
     .toLowerCase()
@@ -106,16 +108,18 @@ export async function POST(request: Request) {
       slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
     }
 
-    const { data: organization, error: orgError } = await adminClient
-      .from<Database['public']['Tables']['organizations']['Row']>('organizations')
-      .insert({
-        name: organizationName,
-        slug,
-        industry,
-        plan: 'starter',
-        sms_credits: 25,
-        subscription_status: 'trial',
-      })
+    const organizationInsert: OrganizationsInsert = {
+      name: organizationName,
+      slug,
+      industry,
+      plan: 'starter',
+      sms_credits: 25,
+      subscription_status: 'trial',
+    };
+
+    const { data: organization, error: orgError } = await (adminClient as any)
+      .from('organizations')
+      .insert(organizationInsert)
       .select()
       .single();
 
@@ -125,7 +129,7 @@ export async function POST(request: Request) {
 
     createdOrganizationId = organization.id;
 
-    const { error: updateUserError } = await adminClient
+    const { error: updateUserError } = await (adminClient as any)
       .from('users')
       .update({
         organization_id: organization.id,
