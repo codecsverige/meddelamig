@@ -1,7 +1,6 @@
 'use client';
 
-import { createServerClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
@@ -38,7 +37,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const supabase = createServerClient();
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
