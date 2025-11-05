@@ -1,13 +1,36 @@
-'use client';
+"use client";
 
-import { useState, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Send } from 'lucide-react';
-import Link from 'next/link';
-import { calculateSMSSegments, calculateSMSCost } from '@/lib/utils/sms';
+import { useState, useEffect, Suspense, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ArrowLeft, Send, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { calculateSMSSegments, calculateSMSCost } from "@/lib/utils/sms";
+import {
+  PLACEHOLDER_METADATA_BY_CATEGORY,
+  resolvePlaceholders,
+} from "@/lib/utils/placeholders";
+
+const PLACEHOLDER_CATEGORY_LABELS: Record<
+  keyof typeof PLACEHOLDER_METADATA_BY_CATEGORY,
+  string
+> = {
+  contact: "Kontakt",
+  organization: "Organisation",
+  system: "System",
+};
+
+const PLACEHOLDER_CATEGORY_ORDER: Array<
+  keyof typeof PLACEHOLDER_METADATA_BY_CATEGORY
+> = ["contact", "organization", "system"];
 
 function SendSMSForm() {
   const router = useRouter();
@@ -16,18 +39,45 @@ function SendSMSForm() {
 
   const [contacts, setContacts] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
+  const [organization, setOrganization] = useState<any>(null);
   const [formData, setFormData] = useState({
-    contactId: searchParams.get('contact') || '',
-    templateId: '',
-    message: '',
+    contactId: searchParams.get("contact") || "",
+    templateId: "",
+    message: "",
   });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Calculate SMS segments and cost
-  const segments = calculateSMSSegments(formData.message);
-  const cost = calculateSMSCost(formData.message);
+  const selectedContact = useMemo(
+    () => contacts.find((contact) => contact.id === formData.contactId),
+    [contacts, formData.contactId],
+  );
+
+  const placeholderResult = useMemo(() => {
+    if (!formData.message) {
+      return { rendered: "", unmatched: [] as string[] };
+    }
+
+    return resolvePlaceholders(formData.message, {
+      contact: selectedContact,
+      organization,
+    });
+  }, [formData.message, selectedContact, organization]);
+
+  const previewMessage = selectedContact
+    ? placeholderResult.rendered
+    : formData.message;
+  const metricsMessage = previewMessage || formData.message || "";
+  const segments = useMemo(
+    () => calculateSMSSegments(metricsMessage),
+    [metricsMessage],
+  );
+  const cost = useMemo(
+    () => calculateSMSCost(metricsMessage),
+    [metricsMessage],
+  );
+  const unmatchedPlaceholders = placeholderResult.unmatched;
 
   useEffect(() => {
     loadData();
@@ -42,41 +92,59 @@ function SendSMSForm() {
       if (!session) return;
 
       const { data: user } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('id', session.user.id)
+        .from("users")
+        .select("organization_id")
+        .eq("id", session.user.id)
         .single();
 
       if (!user?.organization_id) return;
 
-      // Load contacts
-      const { data: contactsData } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('organization_id', user.organization_id)
-        .eq('sms_consent', true)
-        .is('deleted_at', null)
-        .order('name');
+      const [contactsResponse, templatesResponse, organizationResponse] =
+        await Promise.all([
+          supabase
+            .from("contacts")
+            .select("*")
+            .eq("organization_id", user.organization_id)
+            .eq("sms_consent", true)
+            .is("deleted_at", null)
+            .order("name"),
+          supabase
+            .from("sms_templates")
+            .select("*")
+            .or(`organization_id.eq.${user.organization_id},is_global.eq.true`)
+            .order("name"),
+          supabase
+            .from("organizations")
+            .select("id, name, sms_sender_name, plan")
+            .eq("id", user.organization_id)
+            .single(),
+        ]);
 
-      setContacts(contactsData || []);
-
-      // Load templates (user's + global)
-      const { data: templatesData } = await supabase
-        .from('sms_templates')
-        .select('*')
-        .or(`organization_id.eq.${user.organization_id},is_global.eq.true`)
-        .order('name');
-
-      setTemplates(templatesData || []);
+      setContacts(contactsResponse.data || []);
+      setTemplates(templatesResponse.data || []);
+      setOrganization(organizationResponse.data || null);
     } catch (err) {
-      console.error('Failed to load data:', err);
+      console.error("Failed to load data:", err);
     }
   };
 
+  const handleInsertPlaceholder = (token: string) => {
+    setFormData((prev) => {
+      const currentMessage = prev.message || "";
+      const needsSpace =
+        currentMessage.length > 0 && !/\s$/.test(currentMessage);
+      const updatedMessage = `${currentMessage}${needsSpace ? " " : ""}${token}`;
+      return {
+        ...prev,
+        message: updatedMessage,
+      };
+    });
+  };
+
   const handleTemplateSelect = (templateId: string) => {
-    const template = templates.find(t => t.id === templateId);
+    const template = templates.find((t) => t.id === templateId);
     if (template) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         templateId,
         message: template.message,
@@ -86,6 +154,12 @@ function SendSMSForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (unmatchedPlaceholders.length > 0) {
+      setError(`Okända placeholders: ${unmatchedPlaceholders.join(", ")}`);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -94,24 +168,24 @@ function SendSMSForm() {
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (!session) throw new Error('Not authenticated');
+      if (!session) throw new Error("Not authenticated");
 
       const { data: user } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('id', session.user.id)
+        .from("users")
+        .select("organization_id")
+        .eq("id", session.user.id)
         .single();
 
-      if (!user?.organization_id) throw new Error('No organization');
+      if (!user?.organization_id) throw new Error("No organization");
 
       // Get contact
-      const contact = contacts.find(c => c.id === formData.contactId);
-      if (!contact) throw new Error('Contact not found');
+      const contact = contacts.find((c) => c.id === formData.contactId);
+      if (!contact) throw new Error("Contact not found");
 
       // Send SMS via API route
-      const response = await fetch('/api/sms/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/sms/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contactId: formData.contactId,
           message: formData.message,
@@ -122,14 +196,14 @@ function SendSMSForm() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to send SMS');
+        throw new Error(result.error || "Failed to send SMS");
       }
 
       // Success
-      router.push('/messages?success=sms_sent');
+      router.push("/messages?success=sms_sent");
       router.refresh();
     } catch (err: any) {
-      setError(err.message || 'Ett fel uppstod');
+      setError(err.message || "Ett fel uppstod");
     } finally {
       setLoading(false);
     }
@@ -162,18 +236,26 @@ function SendSMSForm() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Contact Selection */}
             <div>
-              <label htmlFor="contactId" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="contactId"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Mottagare *
               </label>
               <select
                 id="contactId"
                 value={formData.contactId}
-                onChange={(e) => setFormData(prev => ({ ...prev, contactId: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    contactId: e.target.value,
+                  }))
+                }
                 required
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Välj kontakt...</option>
-                {contacts.map(contact => (
+                {contacts.map((contact) => (
                   <option key={contact.id} value={contact.id}>
                     {contact.name} ({contact.phone})
                   </option>
@@ -181,7 +263,7 @@ function SendSMSForm() {
               </select>
               {contacts.length === 0 && (
                 <p className="text-xs text-red-600 mt-1">
-                  Inga kontakter med SMS-godkännande hittades.{' '}
+                  Inga kontakter med SMS-godkännande hittades.{" "}
                   <Link href="/contacts/new" className="underline">
                     Lägg till kontakt
                   </Link>
@@ -191,7 +273,10 @@ function SendSMSForm() {
 
             {/* Template Selection */}
             <div>
-              <label htmlFor="templateId" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="templateId"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Mall (valfritt)
               </label>
               <select
@@ -201,9 +286,9 @@ function SendSMSForm() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Ingen mall - skriv eget meddelande</option>
-                {templates.map(template => (
+                {templates.map((template) => (
                   <option key={template.id} value={template.id}>
-                    {template.name} {template.is_global && '(Färdig mall)'}
+                    {template.name} {template.is_global && "(Färdig mall)"}
                   </option>
                 ))}
               </select>
@@ -211,13 +296,57 @@ function SendSMSForm() {
 
             {/* Message */}
             <div>
-              <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="message"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Meddelande *
               </label>
+              <div className="mb-3 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                  Dynamiska fält
+                </p>
+                <p className="text-xs text-gray-500">
+                  Klicka på ett fält för att infoga det där markören står.
+                  Fälten ersätts automatiskt med rätt information när
+                  meddelandet skickas.
+                </p>
+                {PLACEHOLDER_CATEGORY_ORDER.map((category) => {
+                  const placeholders =
+                    PLACEHOLDER_METADATA_BY_CATEGORY[category];
+                  if (!placeholders.length) {
+                    return null;
+                  }
+                  return (
+                    <div key={category}>
+                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                        {PLACEHOLDER_CATEGORY_LABELS[category]}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {placeholders.map((placeholder) => (
+                          <button
+                            key={placeholder.token}
+                            type="button"
+                            onClick={() =>
+                              handleInsertPlaceholder(placeholder.token)
+                            }
+                            className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50"
+                            title={placeholder.description}
+                          >
+                            {placeholder.token}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
               <textarea
                 id="message"
                 value={formData.message}
-                onChange={(e) => setFormData(prev => ({ ...prev, message: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, message: e.target.value }))
+                }
                 required
                 rows={6}
                 maxLength={1600}
@@ -229,18 +358,48 @@ function SendSMSForm() {
                   {formData.message.length} / 1600 tecken
                 </p>
                 <p className="text-xs text-gray-500">
-                  {segments} SMS-del{segments !== 1 ? 'ar' : ''} • ~{cost.toFixed(2)} SEK
+                  {segments} SMS-del{segments !== 1 ? "ar" : ""} • ~
+                  {cost.toFixed(2)} SEK
                 </p>
               </div>
+              {unmatchedPlaceholders.length > 0 && (
+                <div className="mt-2 flex items-center gap-2 text-xs text-amber-600">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>
+                    Okänt placeholder hittat: {unmatchedPlaceholders.join(", ")}
+                    . Ta bort eller ersätt innan du skickar.
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Preview */}
             {formData.message && (
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Förhandsvisning</h4>
-                <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
-                  <p className="text-sm text-gray-900 whitespace-pre-wrap">
-                    {formData.message}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700">
+                      Förhandsvisning
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      {selectedContact
+                        ? `Visas som ${selectedContact.name || selectedContact.phone}`
+                        : "Välj en mottagare för att se personaliseringen"}
+                    </p>
+                  </div>
+                  {selectedContact && unmatchedPlaceholders.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs text-amber-600">
+                      <AlertTriangle className="h-4 w-4" />
+                      <span>
+                        Okänd placeholder kvar:{" "}
+                        {unmatchedPlaceholders.join(", ")}.
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+                  <p className="whitespace-pre-wrap text-sm text-gray-900">
+                    {selectedContact ? previewMessage : formData.message}
                   </p>
                 </div>
               </div>
@@ -256,13 +415,18 @@ function SendSMSForm() {
               >
                 Avbryt
               </Button>
-              <Button 
-                type="submit" 
-                disabled={loading || !formData.contactId || !formData.message} 
+              <Button
+                type="submit"
+                disabled={
+                  loading ||
+                  !formData.contactId ||
+                  !formData.message ||
+                  unmatchedPlaceholders.length > 0
+                }
                 className="flex-1"
               >
                 <Send className="h-4 w-4 mr-2" />
-                {loading ? 'Skickar...' : 'Skicka SMS'}
+                {loading ? "Skickar..." : "Skicka SMS"}
               </Button>
             </div>
           </form>
@@ -274,7 +438,13 @@ function SendSMSForm() {
 
 export default function SendSMSPage() {
   return (
-    <Suspense fallback={<div className="p-8 flex items-center justify-center"><p className="text-gray-500">Laddar...</p></div>}>
+    <Suspense
+      fallback={
+        <div className="p-8 flex items-center justify-center">
+          <p className="text-gray-500">Laddar...</p>
+        </div>
+      }
+    >
       <SendSMSForm />
     </Suspense>
   );

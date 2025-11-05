@@ -1,14 +1,20 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Download, Upload, Search, Users, X } from 'lucide-react';
-import { displayPhoneNumber } from '@/lib/utils/phone';
-import { useToast } from '@/components/ui/toast';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Plus, Download, Upload, Search, Users, X } from "lucide-react";
+import { displayPhoneNumber } from "@/lib/utils/phone";
+import { useToast } from "@/components/ui/toast";
 
 export default function ContactsPage() {
   const router = useRouter();
@@ -17,8 +23,8 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<any[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTag, setSelectedTag] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTag, setSelectedTag] = useState("");
   const [allTags, setAllTags] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
 
@@ -34,32 +40,34 @@ export default function ContactsPage() {
 
   const loadContacts = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) {
-        router.push('/login');
+        router.push("/login");
         return;
       }
 
       const { data: user } = await supabase
-        .from('users')
-        .select('organization_id')
-        .eq('id', session.user.id)
+        .from("users")
+        .select("organization_id")
+        .eq("id", session.user.id)
         .single();
 
       if (!user?.organization_id) {
-        router.push('/onboarding');
+        router.push("/onboarding");
         return;
       }
 
       const { data: contactsData } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('organization_id', user.organization_id)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
+        .from("contacts")
+        .select("*")
+        .eq("organization_id", user.organization_id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
 
       setContacts(contactsData || []);
-      
+
       // Extract unique tags
       const tags = new Set<string>();
       contactsData?.forEach((contact: any) => {
@@ -67,7 +75,7 @@ export default function ContactsPage() {
       });
       setAllTags(Array.from(tags));
     } catch (error) {
-      console.error('Failed to load contacts:', error);
+      console.error("Failed to load contacts:", error);
     } finally {
       setLoading(false);
     }
@@ -83,14 +91,14 @@ export default function ContactsPage() {
         (contact) =>
           contact.name?.toLowerCase().includes(query) ||
           contact.phone?.includes(query) ||
-          contact.email?.toLowerCase().includes(query)
+          contact.email?.toLowerCase().includes(query),
       );
     }
 
     // Filter by tag
     if (selectedTag) {
       filtered = filtered.filter((contact) =>
-        contact.tags?.includes(selectedTag)
+        contact.tags?.includes(selectedTag),
       );
     }
 
@@ -98,24 +106,26 @@ export default function ContactsPage() {
   };
 
   const clearFilters = () => {
-    setSearchQuery('');
-    setSelectedTag('');
+    setSearchQuery("");
+    setSelectedTag("");
   };
 
   const handleExport = async () => {
     try {
       setExporting(true);
-      const response = await fetch('/api/contacts/export');
+      const response = await fetch("/api/contacts/export");
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || 'Misslyckades med att exportera kontakter');
+        throw new Error(
+          errorData?.error || "Misslyckades med att exportera kontakter",
+        );
       }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      const timestamp = new Date().toISOString().split('T')[0];
+      const link = document.createElement("a");
+      const timestamp = new Date().toISOString().split("T")[0];
 
       link.href = url;
       link.download = `meddela-kontakter-${timestamp}.csv`;
@@ -124,10 +134,11 @@ export default function ContactsPage() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
 
-      showToast('Kontakter exporterades!', 'success');
+      showToast("Kontakter exporterades!", "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Ett oväntat fel uppstod';
-      showToast(message, 'error');
+      const message =
+        error instanceof Error ? error.message : "Ett oväntat fel uppstod";
+      showToast(message, "error");
     } finally {
       setExporting(false);
     }
@@ -147,9 +158,7 @@ export default function ContactsPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Kontakter</h1>
-          <p className="text-gray-600">
-            Hantera dina kunder och kontakter
-          </p>
+          <p className="text-gray-600">Hantera dina kunder och kontakter</p>
         </div>
         <div className="flex flex-wrap gap-3">
           <Button
@@ -158,7 +167,7 @@ export default function ContactsPage() {
             disabled={exporting || contacts.length === 0}
           >
             <Download className="h-4 w-4 mr-2" />
-            {exporting ? 'Exporterar...' : 'Exportera'}
+            {exporting ? "Exporterar..." : "Exportera"}
           </Button>
           <Link href="/contacts/import">
             <Button variant="outline">
@@ -217,7 +226,9 @@ export default function ContactsPage() {
           {/* Active Filters Display */}
           {(searchQuery || selectedTag) && (
             <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
-              <span>Visar {filteredContacts.length} av {contacts.length} kontakter</span>
+              <span>
+                Visar {filteredContacts.length} av {contacts.length} kontakter
+              </span>
               {selectedTag && (
                 <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
                   Tag: {selectedTag}
@@ -233,9 +244,7 @@ export default function ContactsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Alla kontakter ({filteredContacts.length})</CardTitle>
-            <CardDescription>
-              En lista över alla dina kontakter
-            </CardDescription>
+            <CardDescription>En lista över alla dina kontakter</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -272,11 +281,11 @@ export default function ContactsPage() {
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
-                            {(contact.name || 'U').charAt(0).toUpperCase()}
+                            {(contact.name || "U").charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
                             <p className="font-medium text-gray-900 truncate">
-                              {contact.name || 'Unnamed'}
+                              {contact.name || "Unnamed"}
                             </p>
                             {contact.sms_consent ? (
                               <p className="text-xs text-green-600">
@@ -294,7 +303,7 @@ export default function ContactsPage() {
                         {displayPhoneNumber(contact.phone)}
                       </td>
                       <td className="hidden md:table-cell py-3 px-4 text-gray-700 truncate max-w-[200px]">
-                        {contact.email || '-'}
+                        {contact.email || "-"}
                       </td>
                       <td className="hidden lg:table-cell py-3 px-4">
                         <div className="flex gap-1 flex-wrap">
@@ -344,9 +353,7 @@ export default function ContactsPage() {
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 Inga kontakter hittades
               </h3>
-              <p className="mb-6">
-                Inga kontakter matchar dina sökkriterier
-              </p>
+              <p className="mb-6">Inga kontakter matchar dina sökkriterier</p>
               <Button onClick={clearFilters} variant="outline">
                 Rensa filter
               </Button>
