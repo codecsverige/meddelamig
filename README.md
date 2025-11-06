@@ -75,6 +75,23 @@ STRIPE_SECRET_KEY=sk_test_xxx
 STRIPE_WEBHOOK_SECRET=whsec_xxx
 \`\`\`
 
+> 💡 Om någon av Supabase-variablerna saknas visas nu ett tydligt felmeddelande i appen och i byggloggen.
+
+Valfria variabler för bootstrap-skriptet:
+
+```env
+# (valfritt) Ändra standarddata som seedas av bootstrap-skriptet
+BOOTSTRAP_ORG_NAME=Demo Restaurang AB
+BOOTSTRAP_ORG_SLUG=demo-restaurang
+BOOTSTRAP_ORG_INDUSTRY=restaurant
+BOOTSTRAP_ORG_PLAN=professional
+BOOTSTRAP_SMS_CREDITS=350
+BOOTSTRAP_SENDER_NAME=MEDDELA
+BOOTSTRAP_OWNER_EMAIL=founder@demo.se
+BOOTSTRAP_OWNER_PASSWORD=Demo1234!
+BOOTSTRAP_OWNER_NAME=Demo Ägare
+```
+
 ### 4. Setup Supabase Database
 
 Kör migration filen i Supabase SQL Editor:
@@ -93,7 +110,22 @@ Seed database med mallar (valfritt):
 # Kör queryn
 \`\`\`
 
-### 5. Konfigurera Supabase Authentication
+### 5. Kör bootstrap-skriptet (seed data)
+
+Bootstrap-skriptet fyller Supabase med en demo-organisation, tre kontakter, SMS-mallar och provdata så att dashboardsen visar riktiga siffror direkt.
+
+```bash
+npm run bootstrap:supabase
+```
+
+Standardinloggning som skapas:
+
+- E-post: `founder@demo.se`
+- Lösenord: `Demo1234!`
+
+> ⚠️ Ändra lösenordet omgående om du använder detta i en verklig miljö.
+
+### 6. Konfigurera Supabase Authentication
 
 I Supabase Dashboard:
 
@@ -103,7 +135,7 @@ I Supabase Dashboard:
 4. Lägg till site URL: \`http://localhost:3000\`
 5. Lägg till redirect URL: \`http://localhost:3000/auth/callback\`
 
-### 6. Starta development server
+### 7. Starta development server
 
 \`\`\`bash
 npm run dev

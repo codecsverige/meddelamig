@@ -1,10 +1,18 @@
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import type { Database } from './types';
 import { createSupabaseStub } from './stub';
+import {
+  getMissingSupabaseEnvVars,
+  logSupabaseConfigWarning,
+} from './config';
 
-const hasClientEnv =
-  Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
-  Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+export const createClient = () => {
+  const missing = getMissingSupabaseEnvVars('public');
 
-export const createClient = () =>
-  hasClientEnv ? createClientComponentClient<Database>() : createSupabaseStub();
+  if (missing.length > 0) {
+    logSupabaseConfigWarning('public', missing);
+    return createSupabaseStub('public');
+  }
+
+  return createClientComponentClient<Database>();
+};
