@@ -67,6 +67,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const navigation = [
     { name: '🌹 Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: '🍽️ Restaurant Hub', href: '/restaurant', icon: Star },
+    { name: '⚡ Automatiseringar', href: '/automation', icon: Zap },
     { name: 'Kontakter', href: '/contacts', icon: Users },
     { name: 'Meddelanden', href: '/messages', icon: MessageSquare },
     { name: 'Kampanjer', href: '/campaigns', icon: Send },
