@@ -12,10 +12,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Plus, Download, Upload, Search, Users, X, Tag } from "lucide-react";
+import { 
+  Plus, Download, Upload, Search, Users, X, Tag, 
+  Send, Trash2, Edit, CheckSquare, Square, MessageSquare 
+} from "lucide-react";
 import { displayPhoneNumber } from "@/lib/utils/phone";
 import { useToast } from "@/components/ui/toast";
-import Link from "next/link";
 
 export default function ContactsPage() {
   const router = useRouter();
@@ -31,6 +33,9 @@ export default function ContactsPage() {
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [bulkActionMode, setBulkActionMode] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [showBulkSMS, setShowBulkSMS] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState("");
+  const [sendingBulk, setSendingBulk] = useState(false);
 
   const { showToast } = useToast();
 
@@ -58,8 +63,9 @@ export default function ContactsPage() {
         .eq("id", session.user.id)
         .single();
 
+      // Skip redirect - handle in UI
       if (!user?.organization_id) {
-        router.push("/onboarding");
+        setLoading(false);
         return;
       }
 
@@ -110,9 +116,14 @@ export default function ContactsPage() {
     setFilteredContacts(filtered);
   };
 
-  const clearFilters = () => {
-    setSearchQuery("");
-    setSelectedTag("");
+  const toggleSelectContact = (contactId: string) => {
+    const newSelected = new Set(selectedContacts);
+    if (newSelected.has(contactId)) {
+      newSelected.delete(contactId);
+    } else {
+      newSelected.add(contactId);
+    }
+    setSelectedContacts(newSelected);
   };
 
   const toggleSelectAll = () => {
@@ -123,110 +134,121 @@ export default function ContactsPage() {
     }
   };
 
-  const toggleSelectContact = (contactId: string) => {
-    const newSet = new Set(selectedContacts);
-    if (newSet.has(contactId)) {
-      newSet.delete(contactId);
-    } else {
-      newSet.add(contactId);
+  const handleBulkSMS = () => {
+    if (selectedContacts.size === 0) {
+      showToast("Välj minst en kontakt", "error");
+      return;
     }
-    setSelectedContacts(newSet);
+    setShowBulkSMS(true);
   };
 
-  const handleBulkDelete = async () => {
-    if (selectedContacts.size === 0) return;
-    
-    if (!confirm(`Är du säker på att du vill ta bort ${selectedContacts.size} kontakter?`)) return;
-
-    try {
-      const contactIds = Array.from(selectedContacts);
-      
-      const { error } = await supabase
-        .from('contacts')
-        .update({ deleted_at: new Date().toISOString() })
-        .in('id', contactIds);
-
-      if (error) throw error;
-
-      showToast(`${selectedContacts.size} kontakter borttagna!`, 'success');
-      setSelectedContacts(new Set());
-      setBulkActionMode(false);
-      loadContacts();
-    } catch (error) {
-      console.error('Bulk delete error:', error);
-      showToast('Kunde inte ta bort kontakter', 'error');
+  const sendBulkSMS = async () => {
+    if (!bulkMessage.trim()) {
+      showToast("Skriv ett meddelande", "error");
+      return;
     }
-  };
 
-  const handleBulkAddTag = async () => {
-    if (selectedContacts.size === 0) return;
-    
-    const newTag = prompt('Ange tagg att lägga till:');
-    if (!newTag) return;
+    setSendingBulk(true);
+    let sent = 0;
+    let failed = 0;
 
     try {
-      const contactIds = Array.from(selectedContacts);
-      
-      // Get current contacts
-      const { data: currentContacts } = await supabase
-        .from('contacts')
-        .select('id, tags')
-        .in('id', contactIds);
+      const selectedContactsList = contacts.filter(c => selectedContacts.has(c.id));
 
-      if (!currentContacts) throw new Error('Could not fetch contacts');
+      for (const contact of selectedContactsList) {
+        try {
+          const response = await fetch("/api/sms/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contactId: contact.id,
+              message: bulkMessage,
+              messageType: "manual",
+            }),
+          });
 
-      // Update each contact
-      for (const contact of currentContacts) {
-        const currentTags = contact.tags || [];
-        if (!currentTags.includes(newTag)) {
-          const updatedTags = [...currentTags, newTag];
-          
-          await supabase
-            .from('contacts')
-            .update({ tags: updatedTags })
-            .eq('id', contact.id);
+          if (response.ok) {
+            sent++;
+          } else {
+            failed++;
+          }
+        } catch {
+          failed++;
         }
       }
 
-      showToast(`Tagg "${newTag}" tillagd till ${selectedContacts.size} kontakter!`, 'success');
+      showToast(`✅ ${sent} SMS skickade! ${failed > 0 ? `❌ ${failed} misslyckades` : ''}`, sent > 0 ? "success" : "error");
+      
+      setShowBulkSMS(false);
+      setBulkMessage("");
+      setSelectedContacts(new Set());
+      setBulkActionMode(false);
+    } catch (error: any) {
+      showToast(error.message || "Något gick fel", "error");
+    } finally {
+      setSendingBulk(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedContacts.size === 0) {
+      showToast("Välj minst en kontakt", "error");
+      return;
+    }
+
+    if (!confirm(`Är du säker på att du vill ta bort ${selectedContacts.size} kontakter?`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("contacts")
+        .update({ deleted_at: new Date().toISOString() })
+        .in("id", Array.from(selectedContacts));
+
+      if (error) throw error;
+
+      showToast(`${selectedContacts.size} kontakter borttagna`, "success");
       setSelectedContacts(new Set());
       setBulkActionMode(false);
       loadContacts();
-    } catch (error) {
-      console.error('Bulk add tag error:', error);
-      showToast('Kunde inte lägga till tagg', 'error');
+    } catch (error: any) {
+      showToast(error.message || "Kunde inte ta bort kontakter", "error");
     }
   };
 
   const handleExport = async () => {
+    setExporting(true);
     try {
-      setExporting(true);
-      const response = await fetch("/api/contacts/export");
+      const exportData = filteredContacts.map((contact) => ({
+        Namn: contact.name,
+        Telefon: contact.phone,
+        Email: contact.email || "",
+        Taggar: contact.tags?.join("; ") || "",
+        "SMS-samtycke": contact.sms_consent ? "Ja" : "Nej",
+        "Marketing-samtycke": contact.marketing_consent ? "Ja" : "Nej",
+        Skapad: new Date(contact.created_at).toLocaleDateString("sv-SE"),
+      }));
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(
-          errorData?.error || "Misslyckades med att exportera kontakter",
-        );
-      }
+      const csv = [
+        Object.keys(exportData[0]).join(","),
+        ...exportData.map((row) =>
+          Object.values(row)
+            .map((val) => `"${val}"`)
+            .join(","),
+        ),
+      ].join("\n");
 
-      const blob = await response.blob();
+      const blob = new Blob([csv], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      const timestamp = new Date().toISOString().split("T")[0];
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `contacts-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
 
-      link.href = url;
-      link.download = `meddela-kontakter-${timestamp}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      showToast("Kontakter exporterades!", "success");
+      showToast("Kontakter exporterade!", "success");
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Ett oväntat fel uppstod";
-      showToast(message, "error");
+      showToast("Export misslyckades", "error");
     } finally {
       setExporting(false);
     }
@@ -275,284 +297,302 @@ export default function ContactsPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Kontakter</h1>
-          <p className="text-gray-600">Hantera dina kunder och kontakter</p>
+          <p className="text-gray-600">
+            {filteredContacts.length} av {contacts.length} kontakter
+          </p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          {bulkActionMode && selectedContacts.size > 0 ? (
+        <div className="flex gap-2 flex-wrap">
+          {bulkActionMode && selectedContacts.size > 0 && (
             <>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSelectedContacts(new Set());
-                  setBulkActionMode(false);
-                }}
+              <Button 
+                variant="outline" 
+                onClick={handleBulkSMS}
+                className="bg-blue-50 hover:bg-blue-100"
               >
-                <X className="h-4 w-4 mr-2" />
-                Avbryt ({selectedContacts.size})
+                <Send className="h-4 w-4 mr-2" />
+                Skicka SMS ({selectedContacts.size})
               </Button>
-              <Button
-                variant="outline"
-                onClick={handleBulkAddTag}
-              >
-                L\u00e4gg till tagg
-              </Button>
-              <Button
-                variant="outline"
+              <Button 
+                variant="outline" 
                 onClick={handleBulkDelete}
-                className="text-red-600 hover:text-red-700"
+                className="bg-red-50 hover:bg-red-100 text-red-600"
               >
-                Ta bort valda
+                <Trash2 className="h-4 w-4 mr-2" />
+                Ta bort ({selectedContacts.size})
               </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => setBulkActionMode(!bulkActionMode)}
-              >
-                {bulkActionMode ? 'Avbryt val' : 'V\u00e4lj flera'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleExport}
-                disabled={exporting || filteredContacts.length === 0}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                {exporting ? "Exporterar..." : `Exportera ${filteredContacts.length > 0 ? `(${filteredContacts.length})` : ''}`}
-              </Button>
-              <Link href="/contacts/import">
-                <Button variant="outline">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Importera
-                </Button>
-              </Link>
-              <Link href="/contacts/new">
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Ny kontakt
-                </Button>
-              </Link>
             </>
           )}
+          <Button variant="outline" onClick={() => setBulkActionMode(!bulkActionMode)}>
+            <CheckSquare className="h-4 w-4 mr-2" />
+            {bulkActionMode ? "Avsluta urval" : "Välj flera"}
+          </Button>
+          <Link href="/contacts/import">
+            <Button variant="outline">
+              <Upload className="h-4 w-4 mr-2" />
+              Importera
+            </Button>
+          </Link>
+          <Button variant="outline" onClick={handleExport} disabled={exporting}>
+            <Download className="h-4 w-4 mr-2" />
+            Exportera
+          </Button>
+          <Link href="/contacts/new">
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Lägg till kontakt
+            </Button>
+          </Link>
         </div>
       </div>
 
       {/* Search & Filter */}
       <Card className="mb-6">
         <CardContent className="pt-6">
-          <div className="flex flex-col lg:flex-row gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Search */}
-            <div className="flex-1 relative">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
+                placeholder="Sök efter namn, telefon eller email..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Sök efter namn, telefon eller email..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
             {/* Tag Filter */}
-            <select
-              value={selectedTag}
-              onChange={(e) => setSelectedTag(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[150px]"
-            >
-              <option value="">Alla taggar</option>
-              {allTags.map((tag) => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
-              ))}
-            </select>
-
-            {/* Clear Filters */}
-            {(searchQuery || selectedTag) && (
-              <Button variant="outline" onClick={clearFilters}>
-                <X className="h-4 w-4 mr-2" />
-                Rensa
-              </Button>
-            )}
-          </div>
-
-          {/* Active Filters Display */}
-          {(searchQuery || selectedTag) && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
-              <span>
-                Visar {filteredContacts.length} av {contacts.length} kontakter
-              </span>
-              {selectedTag && (
-                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
-                  Tag: {selectedTag}
-                </span>
-              )}
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setSelectedTag("")}
+                className={`px-3 py-1 rounded-full text-sm ${
+                  !selectedTag
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                Alla ({contacts.length})
+              </button>
+              {allTags.map((tag) => {
+                const count = contacts.filter((c) => c.tags?.includes(tag)).length;
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => setSelectedTag(tag === selectedTag ? "" : tag)}
+                    className={`px-3 py-1 rounded-full text-sm ${
+                      selectedTag === tag
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {tag} ({count})
+                  </button>
+                );
+              })}
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 
       {/* Contacts List */}
       {filteredContacts.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Alla kontakter ({filteredContacts.length})</CardTitle>
-            <CardDescription>En lista över alla dina kontakter</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredContacts.map((contact) => (
+            <Card 
+              key={contact.id}
+              className={`hover:shadow-lg transition-shadow ${
+                selectedContacts.has(contact.id) ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+              }`}
+            >
+              <CardContent className="pt-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3 flex-1">
                     {bulkActionMode && (
-                      <th className="w-12 py-3 px-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0}
-                          onChange={toggleSelectAll}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                      </th>
+                      <button
+                        onClick={() => toggleSelectContact(contact.id)}
+                        className="flex-shrink-0"
+                      >
+                        {selectedContacts.has(contact.id) ? (
+                          <CheckSquare className="h-5 w-5 text-blue-600" />
+                        ) : (
+                          <Square className="h-5 w-5 text-gray-400" />
+                        )}
+                      </button>
                     )}
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">
-                      Namn
-                    </th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">
-                      Telefon
-                    </th>
-                    <th className="hidden md:table-cell text-left py-3 px-4 font-medium text-gray-700">
-                      E-post
-                    </th>
-                    <th className="hidden lg:table-cell text-left py-3 px-4 font-medium text-gray-700">
-                      Taggar
-                    </th>
-                    <th className="hidden sm:table-cell text-left py-3 px-4 font-medium text-gray-700">
-                      SMS
-                    </th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-700">
-                      Åtgärder
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredContacts.map((contact: any) => (
-                    <tr
-                      key={contact.id}
-                      className={`border-b border-gray-100 hover:bg-gray-50 ${!bulkActionMode ? 'cursor-pointer' : ''} ${selectedContacts.has(contact.id) ? 'bg-blue-50' : ''}`}
-                      onClick={() => !bulkActionMode && router.push(`/contacts/${contact.id}`)}
-                    >
-                      {bulkActionMode && (
-                        <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedContacts.has(contact.id)}
-                            onChange={() => toggleSelectContact(contact.id)}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                        </td>
-                      )}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
-                            {(contact.name || "U").charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-medium text-gray-900 truncate">
-                              {contact.name || "Unnamed"}
-                            </p>
-                            {contact.sms_consent ? (
-                              <p className="text-xs text-green-600">
-                                ✓ SMS-godkännande
-                              </p>
-                            ) : (
-                              <p className="text-xs text-gray-400">
-                                Inget godkännande
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-gray-700">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900 mb-1">
+                        {contact.name}
+                      </h3>
+                      <p className="text-sm text-gray-600">
                         {displayPhoneNumber(contact.phone)}
-                      </td>
-                      <td className="hidden md:table-cell py-3 px-4 text-gray-700 truncate max-w-[200px]">
-                        {contact.email || "-"}
-                      </td>
-                      <td className="hidden lg:table-cell py-3 px-4">
-                        <div className="flex gap-1 flex-wrap">
-                          {contact.tags && contact.tags.length > 0 ? (
-                            contact.tags.slice(0, 2).map((tag: string) => (
-                              <span
-                                key={tag}
-                                className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full"
-                              >
-                                {tag}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-xs text-gray-400">-</span>
-                          )}
-                          {contact.tags && contact.tags.length > 2 && (
-                            <span className="text-xs text-gray-500">
-                              +{contact.tags.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="hidden sm:table-cell py-3 px-4 text-gray-700">
-                        {contact.total_sms_sent || 0}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <Link
-                          href={`/contacts/${contact.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                        >
-                          Visa
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      ) : contacts.length > 0 ? (
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center text-gray-500">
-              <Search className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Inga kontakter hittades
-              </h3>
-              <p className="mb-6">Inga kontakter matchar dina sökkriterier</p>
-              <Button onClick={clearFilters} variant="outline">
-                Rensa filter
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+                      </p>
+                      {contact.email && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {contact.email}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tags */}
+                {contact.tags && contact.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {contact.tags.map((tag: string) => (
+                      <span
+                        key={tag}
+                        className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <Link href={`/messages/send?contact=${contact.id}`} className="flex-1">
+                    <Button variant="outline" size="sm" className="w-full">
+                      <MessageSquare className="h-4 w-4 mr-1" />
+                      SMS
+                    </Button>
+                  </Link>
+                  <Link href={`/contacts/${contact.id}`}>
+                    <Button variant="outline" size="sm">
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+
+                {/* Consent badges */}
+                <div className="flex gap-2 mt-3 pt-3 border-t text-xs">
+                  <span
+                    className={`px-2 py-0.5 rounded-full ${
+                      contact.sms_consent
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {contact.sms_consent ? "✓ SMS" : "✗ SMS"}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full ${
+                      contact.marketing_consent
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {contact.marketing_consent ? "✓ Marketing" : "✗ Marketing"}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       ) : (
         <Card>
           <CardContent className="py-12">
             <div className="text-center text-gray-500">
               <Users className="h-16 w-16 mx-auto mb-4 opacity-50" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Inga kontakter ännu
+                {searchQuery || selectedTag
+                  ? "Inga kontakter hittades"
+                  : "Inga kontakter ännu"}
               </h3>
               <p className="mb-6">
-                Börja med att lägga till din första kontakt
+                {searchQuery || selectedTag
+                  ? "Prova att ändra dina sökfilter"
+                  : "Lägg till din första kontakt för att komma igång"}
               </p>
-              <Link href="/contacts/new">
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Lägg till kontakt
-                </Button>
-              </Link>
+              {!searchQuery && !selectedTag && (
+                <Link href="/contacts/new">
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Lägg till kontakt
+                  </Button>
+                </Link>
+              )}
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Bulk SMS Modal */}
+      {showBulkSMS && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="max-w-2xl w-full">
+            <CardHeader>
+              <CardTitle>Skicka SMS till {selectedContacts.size} kontakter</CardTitle>
+              <CardDescription>
+                Meddelandet skickas till alla valda kontakter
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Meddelande
+                  </label>
+                  <textarea
+                    value={bulkMessage}
+                    onChange={(e) => setBulkMessage(e.target.value)}
+                    rows={6}
+                    maxLength={1600}
+                    placeholder="Skriv ditt meddelande här..."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  />
+                  <div className="mt-2 flex justify-between text-xs text-gray-500">
+                    <span>{bulkMessage.length} / 1600 tecken</span>
+                    <span>
+                      Kostnad: ~{(selectedContacts.size * 0.35).toFixed(2)} SEK
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowBulkSMS(false);
+                      setBulkMessage("");
+                    }}
+                    className="flex-1"
+                  >
+                    Avbryt
+                  </Button>
+                  <Button
+                    onClick={sendBulkSMS}
+                    disabled={sendingBulk || !bulkMessage.trim()}
+                    className="flex-1"
+                  >
+                    {sendingBulk ? "Skickar..." : `Skicka till ${selectedContacts.size}`}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Select All Bar */}
+      {bulkActionMode && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-white shadow-2xl rounded-full px-6 py-4 flex items-center gap-4 border-2 border-blue-500 z-40">
+          <button
+            onClick={toggleSelectAll}
+            className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+          >
+            {selectedContacts.size === filteredContacts.length ? (
+              <CheckSquare className="h-5 w-5 text-blue-600" />
+            ) : (
+              <Square className="h-5 w-5" />
+            )}
+            Välj alla ({filteredContacts.length})
+          </button>
+          <div className="h-6 w-px bg-gray-300" />
+          <span className="text-sm font-semibold text-blue-600">
+            {selectedContacts.size} valda
+          </span>
+        </div>
       )}
     </div>
   );
