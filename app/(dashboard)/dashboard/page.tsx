@@ -345,6 +345,68 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {/* Quick Actions */}
+      <Card className="border-2 border-dashed border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-blue-600" />
+            Snabbåtgärder
+          </CardTitle>
+          <CardDescription>Vanliga uppgifter ett klick bort</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Link href="/messages/send" className="group">
+              <div className="p-4 bg-white rounded-xl hover:shadow-lg transition-all hover:scale-105 border-2 border-transparent hover:border-blue-500">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-600 transition-colors">
+                    <Send className="h-5 w-5 text-blue-600 group-hover:text-white" />
+                  </div>
+                  <h4 className="font-semibold text-gray-900 group-hover:text-blue-600">Skicka SMS</h4>
+                </div>
+                <p className="text-sm text-gray-600">Skicka snabbt till en kontakt</p>
+              </div>
+            </Link>
+
+            <Link href="/contacts/new" className="group">
+              <div className="p-4 bg-white rounded-xl hover:shadow-lg transition-all hover:scale-105 border-2 border-transparent hover:border-green-500">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-green-100 rounded-lg group-hover:bg-green-600 transition-colors">
+                    <Users className="h-5 w-5 text-green-600 group-hover:text-white" />
+                  </div>
+                  <h4 className="font-semibold text-gray-900 group-hover:text-green-600">Ny kontakt</h4>
+                </div>
+                <p className="text-sm text-gray-600">Lägg till en ny kontakt</p>
+              </div>
+            </Link>
+
+            <Link href="/campaigns" className="group">
+              <div className="p-4 bg-white rounded-xl hover:shadow-lg transition-all hover:scale-105 border-2 border-transparent hover:border-purple-500">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-purple-100 rounded-lg group-hover:bg-purple-600 transition-colors">
+                    <Target className="h-5 w-5 text-purple-600 group-hover:text-white" />
+                  </div>
+                  <h4 className="font-semibold text-gray-900 group-hover:text-purple-600">Ny kampanj</h4>
+                </div>
+                <p className="text-sm text-gray-600">Skicka bulk SMS</p>
+              </div>
+            </Link>
+
+            <Link href="/contacts/import" className="group">
+              <div className="p-4 bg-white rounded-xl hover:shadow-lg transition-all hover:scale-105 border-2 border-transparent hover:border-orange-500">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-orange-100 rounded-lg group-hover:bg-orange-600 transition-colors">
+                    <Activity className="h-5 w-5 text-orange-600 group-hover:text-white" />
+                  </div>
+                  <h4 className="font-semibold text-gray-900 group-hover:text-orange-600">Importera</h4>
+                </div>
+                <p className="text-sm text-gray-600">Ladda upp kontakter</p>
+              </div>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Smart Insights */}
       {insights.length > 0 && <InsightsCard insights={insights} />}
 
