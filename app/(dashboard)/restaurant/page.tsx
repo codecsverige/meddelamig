@@ -23,6 +23,11 @@ type QuickCampaign = {
   targetType: 'all' | 'vip' | 'inactive' | 'recent';
 };
 
+type ContactRecord = {
+  id: string;
+  tags?: string[] | null;
+};
+
 export default function RestaurantHubPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -66,16 +71,20 @@ export default function RestaurantHubPage() {
         .eq('organization_id', user.organization_id)
         .is('deleted_at', null);
 
-      const vipCount = contacts?.filter(c => c.tags?.includes('VIP') || c.tags?.includes('vip')).length || 0;
-      
+      const contactList = (contacts ?? []) as ContactRecord[];
+
+      const vipCount = contactList.filter((contact) =>
+        contact.tags?.includes('VIP') || contact.tags?.includes('vip')
+      ).length;
+
       // Inactive: no SMS in last 60 days (mock for now)
-      const inactiveCount = Math.floor((contacts?.length || 0) * 0.2);
+      const inactiveCount = Math.floor(contactList.length * 0.2);
 
       // Upcoming birthdays in next 7 days (mock for now)
-      const birthdayCount = Math.floor((contacts?.length || 0) * 0.05);
+      const birthdayCount = Math.floor(contactList.length * 0.05);
 
       setStats({
-        totalContacts: contacts?.length || 0,
+        totalContacts: contactList.length,
         vipContacts: vipCount,
         inactiveContacts: inactiveCount,
         upcomingBirthdays: birthdayCount,
@@ -180,8 +189,9 @@ export default function RestaurantHubPage() {
       }
 
       const { data: contacts } = await query;
+      const contactList = (contacts ?? []) as ContactRecord[];
 
-      if (!contacts || contacts.length === 0) {
+      if (contactList.length === 0) {
         showToast('Inga kontakter hittades för denna kampanj', 'error');
         return;
       }
@@ -190,7 +200,7 @@ export default function RestaurantHubPage() {
       const campaignData = {
         name: campaign.title,
         message: campaign.message,
-        targetContactIds: contacts.map(c => c.id),
+        targetContactIds: contactList.map((contact) => contact.id),
       };
 
       // Save to sessionStorage and redirect
