@@ -1,64 +1,85 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessageSquare, Plus, Edit, Trash2, Copy, FileText } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Plus, Edit, Trash2, Copy, MessageSquare, X } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { Badge } from '@/components/ui/badge';
 
-interface Template {
+type Template = {
   id: string;
   name: string;
   message: string;
-  category: string;
-  organization_id: string | null;
+  category: 'reminder' | 'confirmation' | 'marketing' | 'thank_you';
+  is_global: boolean;
+  industry: string | null;
   usage_count: number;
-}
+  organization_id: string | null;
+  created_at: string;
+};
+
+const CATEGORIES = [
+  { value: 'reminder', label: 'Påminnelse', icon: '⏰' },
+  { value: 'confirmation', label: 'Bekräftelse', icon: '✅' },
+  { value: 'marketing', label: 'Marknadsföring', icon: '📢' },
+  { value: 'thank_you', label: 'Tack', icon: '🙏' },
+];
 
 export default function TemplatesPage() {
+  const router = useRouter();
   const supabase = createClient();
   const { showToast } = useToast();
-  
+
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [showModal, setShowModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
   const [formData, setFormData] = useState({
     name: '',
     message: '',
-    category: 'general',
+    category: 'reminder' as Template['category'],
   });
 
   useEffect(() => {
-    fetchTemplates();
+    loadTemplates();
   }, []);
 
-  const fetchTemplates = async () => {
+  const loadTemplates = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
+      }
 
-      const { data: userData } = await supabase
+      const { data: user } = await supabase
         .from('users')
         .select('organization_id')
-        .eq('id', user.id)
+        .eq('id', session.user.id)
         .single();
 
-      if (!userData?.organization_id) return;
+      if (!user?.organization_id) {
+        router.push('/onboarding');
+        return;
+      }
 
-      // Fetch both global and organization templates
+      // Get both global templates and organization templates
       const { data, error } = await supabase
         .from('sms_templates')
         .select('*')
-        .or(`organization_id.is.null,organization_id.eq.${userData.organization_id}`)
+        .or(`organization_id.eq.${user.organization_id},is_global.eq.true`)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+
       setTemplates(data || []);
-    } catch (error) {
-      console.error('Error fetching templates:', error);
-      showToast('Kunde inte ladda mallar', 'error');
+    } catch (error: any) {
+      showToast(error.message || 'Kunde inte ladda mallar', 'error');
     } finally {
       setLoading(false);
     }
@@ -66,18 +87,19 @@ export default function TemplatesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Inte inloggad');
+    setLoading(true);
 
-      const { data: userData } = await supabase
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Inte inloggad');
+
+      const { data: user } = await supabase
         .from('users')
         .select('organization_id')
-        .eq('id', user.id)
+        .eq('id', session.user.id)
         .single();
 
-      if (!userData?.organization_id) throw new Error('Organisation saknas');
+      if (!user?.organization_id) throw new Error('Ingen organisation');
 
       if (editingTemplate) {
         // Update existing template
@@ -88,294 +110,401 @@ export default function TemplatesPage() {
             message: formData.message,
             category: formData.category,
           })
-          .eq('id', editingTemplate.id);
+          .eq('id', editingTemplate.id)
+          .eq('organization_id', user.organization_id); // Ensure user owns it
 
         if (error) throw error;
-        showToast('Mall uppdaterad! ✅', 'success');
+        showToast('Mall uppdaterad!', 'success');
       } else {
         // Create new template
         const { error } = await supabase
           .from('sms_templates')
           .insert({
+            organization_id: user.organization_id,
             name: formData.name,
             message: formData.message,
             category: formData.category,
-            organization_id: userData.organization_id,
-            usage_count: 0,
+            is_global: false,
           });
 
         if (error) throw error;
-        showToast('Mall skapad! ✅', 'success');
+        showToast('Mall skapad!', 'success');
       }
 
-      setFormData({ name: '', message: '', category: 'general' });
-      setShowForm(false);
+      setShowModal(false);
       setEditingTemplate(null);
-      fetchTemplates();
+      setFormData({ name: '', message: '', category: 'reminder' });
+      loadTemplates();
     } catch (error: any) {
-      console.error('Error saving template:', error);
-      showToast(error.message || 'Kunde inte spara mall', 'error');
+      showToast(error.message || 'Något gick fel', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleEdit = (template: Template) => {
-    if (template.organization_id === null) {
-      showToast('Globala mallar kan inte redigeras', 'warning');
+    if (template.is_global) {
+      showToast('Globala mallar kan inte redigeras', 'error');
       return;
     }
+
     setEditingTemplate(template);
     setFormData({
       name: template.name,
       message: template.message,
       category: template.category,
     });
-    setShowForm(true);
+    setShowModal(true);
   };
 
   const handleDelete = async (templateId: string, isGlobal: boolean) => {
     if (isGlobal) {
-      showToast('Globala mallar kan inte tas bort', 'warning');
+      showToast('Globala mallar kan inte tas bort', 'error');
       return;
     }
 
     if (!confirm('Är du säker på att du vill ta bort denna mall?')) return;
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Inte inloggad');
+
+      const { data: user } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('id', session.user.id)
+        .single();
+
       const { error } = await supabase
         .from('sms_templates')
         .delete()
-        .eq('id', templateId);
+        .eq('id', templateId)
+        .eq('organization_id', user?.organization_id); // Ensure user owns it
 
       if (error) throw error;
 
       showToast('Mall borttagen', 'success');
-      fetchTemplates();
-    } catch (error) {
-      console.error('Error deleting template:', error);
-      showToast('Kunde inte ta bort mall', 'error');
+      loadTemplates();
+    } catch (error: any) {
+      showToast(error.message || 'Kunde inte ta bort mall', 'error');
     }
   };
 
-  const handleCopy = (message: string) => {
-    navigator.clipboard.writeText(message);
-    showToast('Meddelande kopierat! 📋', 'success');
-  };
+  const handleDuplicate = async (template: Template) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Inte inloggad');
 
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case 'restaurant': return 'bg-orange-100 text-orange-800';
-      case 'salon': return 'bg-pink-100 text-pink-800';
-      case 'workshop': return 'bg-blue-100 text-blue-800';
-      case 'b2b': return 'bg-purple-100 text-purple-800';
-      default: return 'bg-gray-100 text-gray-800';
+      const { data: user } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('id', session.user.id)
+        .single();
+
+      if (!user?.organization_id) throw new Error('Ingen organisation');
+
+      const { error } = await supabase
+        .from('sms_templates')
+        .insert({
+          organization_id: user.organization_id,
+          name: `${template.name} (Kopia)`,
+          message: template.message,
+          category: template.category,
+          is_global: false,
+        });
+
+      if (error) throw error;
+
+      showToast('Mall duplicerad!', 'success');
+      loadTemplates();
+    } catch (error: any) {
+      showToast(error.message || 'Kunde inte duplicera mall', 'error');
     }
   };
 
-  const getCategoryName = (category: string) => {
-    switch (category) {
-      case 'restaurant': return 'Restaurant';
-      case 'salon': return 'Salong';
-      case 'workshop': return 'Verkstad';
-      case 'b2b': return 'B2B';
-      default: return 'Allmän';
-    }
-  };
+  const filteredTemplates = selectedCategory === 'all'
+    ? templates
+    : templates.filter(t => t.category === selectedCategory);
 
-  if (loading) {
-    return (
-      <div className="p-8 flex items-center justify-center">
-        <div className="text-gray-600">Laddar mallar...</div>
-      </div>
-    );
-  }
+  const categoryBadgeColors = {
+    reminder: 'bg-blue-100 text-blue-800',
+    confirmation: 'bg-green-100 text-green-800',
+    marketing: 'bg-purple-100 text-purple-800',
+    thank_you: 'bg-pink-100 text-pink-800',
+  };
 
   return (
-    <div className="p-8">
+    <div className="p-4 lg:p-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">SMS-mallar</h1>
           <p className="text-gray-600">
-            Skapa och hantera återanvändbara SMS-mallar för ditt företag
+            Skapa och hantera återanvändbara SMS-mallar
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setShowForm(true);
-            setEditingTemplate(null);
-            setFormData({ name: '', message: '', category: 'general' });
-          }}
-          className="flex items-center gap-2"
-        >
-          <Plus className="h-4 w-4" />
+        <Button onClick={() => {
+          setEditingTemplate(null);
+          setFormData({ name: '', message: '', category: 'reminder' });
+          setShowModal(true);
+        }}>
+          <Plus className="h-4 w-4 mr-2" />
           Ny mall
         </Button>
       </div>
 
-      {/* Form */}
-      {showForm && (
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>
-              {editingTemplate ? 'Redigera mall' : 'Skapa ny mall'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Mallnamn
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="T.ex. Bokningspåminnelse"
-                />
-              </div>
+      {/* Category Filter */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        <Button
+          variant={selectedCategory === 'all' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSelectedCategory('all')}
+        >
+          Alla ({templates.length})
+        </Button>
+        {CATEGORIES.map(cat => {
+          const count = templates.filter(t => t.category === cat.value).length;
+          return (
+            <Button
+              key={cat.value}
+              variant={selectedCategory === cat.value ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setSelectedCategory(cat.value)}
+            >
+              {cat.icon} {cat.label} ({count})
+            </Button>
+          );
+        })}
+      </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Kategori
-                </label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="general">Allmän</option>
-                  <option value="restaurant">Restaurant</option>
-                  <option value="salon">Salong</option>
-                  <option value="workshop">Verkstad</option>
-                  <option value="b2b">B2B</option>
-                </select>
-              </div>
+      {/* Templates Grid */}
+      {loading ? (
+        <div className="text-center py-12">
+          <p className="text-gray-500">Laddar mallar...</p>
+        </div>
+      ) : filteredTemplates.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredTemplates.map(template => (
+            <Card key={template.id} className="hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="flex items-start justify-between mb-2">
+                  <CardTitle className="text-lg">{template.name}</CardTitle>
+                  {template.is_global && (
+                    <Badge variant="outline" className="text-xs">
+                      Global
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-1 rounded-full ${categoryBadgeColors[template.category]}`}>
+                    {CATEGORIES.find(c => c.value === template.category)?.label}
+                  </span>
+                  {template.usage_count > 0 && (
+                    <span className="text-xs text-gray-500">
+                      Använd {template.usage_count}x
+                    </span>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="bg-gray-50 rounded-lg p-3 mb-4 min-h-[100px]">
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-4">
+                    {template.message}
+                  </p>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Meddelande
-                </label>
-                <textarea
-                  value={formData.message}
-                  onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                  required
-                  rows={4}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                  placeholder="Skriv ditt SMS-meddelande här..."
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  {formData.message.length} / 1600 tecken
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <Button type="submit">
-                  {editingTemplate ? 'Uppdatera' : 'Skapa mall'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setShowForm(false);
-                    setEditingTemplate(null);
-                    setFormData({ name: '', message: '', category: 'general' });
-                  }}
-                >
-                  Avbryt
-                </Button>
-              </div>
-            </form>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDuplicate(template)}
+                    className="flex-1"
+                  >
+                    <Copy className="h-4 w-4 mr-1" />
+                    Kopiera
+                  </Button>
+                  {!template.is_global && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEdit(template)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDelete(template.id, template.is_global)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center text-gray-500">
+              <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Inga mallar ännu
+              </h3>
+              <p className="mb-6">
+                Skapa din första SMS-mall för att spara tid
+              </p>
+              <Button onClick={() => setShowModal(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Skapa mall
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Templates Grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {templates.map((template) => {
-          const isGlobal = template.organization_id === null;
-          return (
-            <Card key={template.id} className={isGlobal ? 'border-blue-200 bg-blue-50/50' : ''}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${getCategoryColor(template.category)}`}>
-                        {getCategoryName(template.category)}
-                      </span>
-                      {isGlobal && (
-                        <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                          Global
-                        </span>
-                      )}
-                    </div>
-                    <CardTitle className="text-lg">{template.name}</CardTitle>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleCopy(template.message)}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                      title="Kopiera"
-                    >
-                      <Copy className="h-4 w-4 text-gray-600" />
-                    </button>
-                    {!isGlobal && (
-                      <>
-                        <button
-                          onClick={() => handleEdit(template)}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="Redigera"
-                        >
-                          <Edit className="h-4 w-4 text-gray-600" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(template.id, isGlobal)}
-                          className="p-2 hover:bg-red-100 rounded-lg transition-colors"
-                          title="Ta bort"
-                        >
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-700 mb-4 whitespace-pre-wrap">
-                  {template.message}
-                </p>
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <FileText className="h-3 w-3" />
-                  <span>Använd {template.usage_count} gånger</span>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+      {/* Create/Edit Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">
+                  {editingTemplate ? 'Redigera mall' : 'Skapa ny mall'}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingTemplate(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
 
-        {templates.length === 0 && (
-          <div className="col-span-full text-center py-12">
-            <MessageSquare className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Inga mallar ännu
-            </h3>
-            <p className="text-gray-600 mb-4">
-              Skapa din första SMS-mall för att komma igång
-            </p>
-            <Button
-              onClick={() => {
-                setShowForm(true);
-                setEditingTemplate(null);
-                setFormData({ name: '', message: '', category: 'general' });
-              }}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Skapa första mall
-            </Button>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mallnamn *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    required
+                    placeholder="T.ex. Bokningspåminnelse"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Category */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Kategori *
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {CATEGORIES.map(cat => (
+                      <button
+                        key={cat.value}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, category: cat.value as Template['category'] })}
+                        className={`p-4 border-2 rounded-lg text-left transition-colors ${
+                          formData.category === cat.value
+                            ? 'border-blue-600 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="text-2xl mb-1">{cat.icon}</div>
+                        <div className="font-medium text-gray-900">{cat.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Message */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Meddelande *
+                  </label>
+                  <div className="mb-3 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-xs text-blue-800 mb-2">
+                      <strong>Användbara placeholders:</strong>
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <code className="px-2 py-1 bg-white rounded">{'{{name}}'}</code>
+                      <code className="px-2 py-1 bg-white rounded">{'{{phone}}'}</code>
+                      <code className="px-2 py-1 bg-white rounded">{'{{organization}}'}</code>
+                      <code className="px-2 py-1 bg-white rounded">{'{{date}}'}</code>
+                      <code className="px-2 py-1 bg-white rounded">{'{{time}}'}</code>
+                    </div>
+                  </div>
+                  <textarea
+                    value={formData.message}
+                    onChange={e => setFormData({ ...formData, message: e.target.value })}
+                    required
+                    rows={6}
+                    maxLength={1600}
+                    placeholder="Hej {{name}}! Detta är en påminnelse om din bokning hos {{organization}} kl {{time}}."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  />
+                  <div className="mt-2 flex justify-between text-xs text-gray-500">
+                    <span>{formData.message.length} / 1600 tecken</span>
+                    <span>{Math.ceil(formData.message.length / 160)} SMS-del{Math.ceil(formData.message.length / 160) !== 1 ? 'ar' : ''}</span>
+                  </div>
+                </div>
+
+                {/* Preview */}
+                {formData.message && (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">
+                      Förhandsvisning
+                    </h4>
+                    <div className="rounded-lg bg-white border border-gray-200 p-3 shadow-sm">
+                      <p className="text-sm text-gray-900 whitespace-pre-wrap">
+                        {formData.message
+                          .replace(/\{\{name\}\}/g, 'Anna Andersson')
+                          .replace(/\{\{phone\}\}/g, '+46701234567')
+                          .replace(/\{\{organization\}\}/g, 'Min Restaurang')
+                          .replace(/\{\{date\}\}/g, '2024-01-15')
+                          .replace(/\{\{time\}\}/g, '18:00')
+                        }
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setShowModal(false);
+                      setEditingTemplate(null);
+                    }}
+                    className="flex-1"
+                  >
+                    Avbryt
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={loading || !formData.name || !formData.message}
+                    className="flex-1"
+                  >
+                    {loading ? 'Sparar...' : editingTemplate ? 'Uppdatera' : 'Skapa mall'}
+                  </Button>
+                </div>
+              </form>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
