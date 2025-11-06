@@ -66,12 +66,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const navigation = [
     { name: '🌹 Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    { name: '🍽️ Restaurant Hub', href: '/restaurant', icon: Star },
     { name: 'Kontakter', href: '/contacts', icon: Users },
     { name: 'Meddelanden', href: '/messages', icon: MessageSquare },
     { name: 'Kampanjer', href: '/campaigns', icon: Send },
-    { name: '🎁 Lojalitet', href: '/loyalty', icon: Star },
-    { name: '⭐ Recensioner', href: '/reviews', icon: MessageSquare },
-    { name: '📅 Bokningar', href: '/bookings', icon: Calendar },
     { name: 'Mallar', href: '/templates', icon: MessageSquare },
     { name: 'Analys', href: '/analytics', icon: BarChart3 },
     { name: 'Inställningar', href: '/settings', icon: Settings },
