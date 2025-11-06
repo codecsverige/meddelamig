@@ -15,7 +15,8 @@ import {
   Menu,
   X,
   Star,
-  Calendar
+  Calendar,
+  Zap
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
