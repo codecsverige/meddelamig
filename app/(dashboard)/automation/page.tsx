@@ -74,7 +74,7 @@ export default function AutomationPage() {
         const next7Days = new Date();
         next7Days.setDate(today.getDate() + 7);
 
-        const upcoming = contacts.filter(c => {
+        const upcoming = contacts.filter((c: any) => {
           if (!c.birthday) return false;
           
           const birthday = new Date(c.birthday);
