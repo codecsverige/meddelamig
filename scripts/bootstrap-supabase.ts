@@ -129,23 +129,38 @@ async function ensureOrganization(
     throw new Error(`Kunde inte läsa organisation: ${error.message}`);
   }
 
-  const payload: Database['public']['Tables']['organizations']['Update'] = {
+  const baseFields = {
     name: config.organizationName,
     slug: config.organizationSlug,
     industry: config.industry,
     plan: config.plan,
-    sms_credits: Math.max(existing?.sms_credits ?? 0, config.smsCredits),
-    subscription_status: 'trial',
+    subscription_status: 'trial' as const,
     sms_sender_name: config.senderName,
     gdpr_consent_date: new Date().toISOString(),
     data_processing_agreement: true,
     email: config.ownerEmail,
+  } satisfies Pick<
+    Database['public']['Tables']['organizations']['Insert'],
+    | 'name'
+    | 'slug'
+    | 'industry'
+    | 'plan'
+    | 'subscription_status'
+    | 'sms_sender_name'
+    | 'gdpr_consent_date'
+    | 'data_processing_agreement'
+    | 'email'
+  >;
+
+  const updatePayload: Database['public']['Tables']['organizations']['Update'] = {
+    ...baseFields,
+    sms_credits: Math.max(existing?.sms_credits ?? 0, config.smsCredits),
   };
 
   if (existing?.id) {
     const { error: updateError } = await supabase
       .from('organizations')
-      .update(payload)
+      .update(updatePayload)
       .eq('id', existing.id);
 
     if (updateError) {
@@ -155,9 +170,14 @@ async function ensureOrganization(
     return existing.id;
   }
 
+  const insertPayload: Database['public']['Tables']['organizations']['Insert'] = {
+    ...baseFields,
+    sms_credits: config.smsCredits,
+  };
+
   const { data: inserted, error: insertError } = await supabase
     .from('organizations')
-    .insert({ ...payload, sms_credits: config.smsCredits })
+    .insert(insertPayload)
     .select('id')
     .single();
 
@@ -175,15 +195,20 @@ async function ensureOwnerUser(
   config: BootstrapConfig,
   organizationId: string,
 ): Promise<string> {
-  const { data: existingUser, error } = await supabase.auth.admin.getUserByEmail(
-    config.ownerEmail,
-  );
+  const { data: userList, error } = await supabase.auth.admin.listUsers({
+    page: 1,
+    perPage: 100,
+  });
 
   if (error) {
     throw new Error(`Kunde inte hämta användare: ${error.message}`);
   }
 
-  let userId = existingUser.user?.id;
+  const existingUser = userList?.users?.find(
+    (user) => user.email?.toLowerCase() === config.ownerEmail.toLowerCase(),
+  );
+
+  let userId = existingUser?.id;
 
   if (!userId) {
     const { data, error: createError } = await supabase.auth.admin.createUser({
@@ -205,7 +230,7 @@ async function ensureOwnerUser(
   } else {
     await supabase.auth.admin.updateUserById(userId, {
       user_metadata: {
-        ...(existingUser.user?.user_metadata ?? {}),
+        ...(existingUser?.user_metadata ?? {}),
         full_name: config.ownerName,
       },
     });
