@@ -30,6 +30,7 @@ export default function ContactsPage() {
   const [exporting, setExporting] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [bulkActionMode, setBulkActionMode] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
   const { showToast } = useToast();
 
@@ -70,6 +71,7 @@ export default function ContactsPage() {
         .order("created_at", { ascending: false });
 
       setContacts(contactsData || []);
+      setUser(user);
 
       // Extract unique tags
       const tags = new Set<string>();
