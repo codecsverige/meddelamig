@@ -13,7 +13,9 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  Star,
+  Calendar
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
