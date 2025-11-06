@@ -15,6 +15,7 @@ import {
 import { Plus, Download, Upload, Search, Users, X, Tag } from "lucide-react";
 import { displayPhoneNumber } from "@/lib/utils/phone";
 import { useToast } from "@/components/ui/toast";
+import Link from "next/link";
 
 export default function ContactsPage() {
   const router = useRouter();
@@ -236,6 +237,32 @@ export default function ContactsPage() {
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-600 mb-4"></div>
           <p className="text-gray-500 font-medium">Laddar kontakter...</p>
         </div>
+      </div>
+    );
+  }
+
+  // Show onboarding prompt if no organization
+  if (!contacts.length && !user?.organization_id) {
+    return (
+      <div className="p-4 lg:p-8">
+        <Card className="max-w-2xl mx-auto">
+          <CardContent className="pt-6 pb-6 text-center">
+            <div className="mb-6">
+              <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Ingen organisation ännu
+              </h2>
+              <p className="text-gray-600">
+                Skapa din organisation först för att börja lägga till kontakter
+              </p>
+            </div>
+            <Link href="/onboarding">
+              <Button size="lg">
+                Skapa organisation
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     );
   }

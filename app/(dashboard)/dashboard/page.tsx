@@ -17,6 +17,7 @@ import {
   Activity
 } from 'lucide-react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { StatCard } from '@/components/dashboard/stat-card';
 import { ActivityTimeline } from '@/components/dashboard/activity-timeline';
 import { InsightsCard } from '@/components/dashboard/insights-card';
@@ -45,7 +46,36 @@ export default async function DashboardPage() {
     redirect('/onboarding');
   }
 
-  const orgId = user.organization_id;
+  const orgId = user?.organization_id;
+
+  // If no organization, show onboarding prompt instead of redirect
+  if (!orgId) {
+    return (
+      <div className="p-4 lg:p-8">
+        <Card className="max-w-2xl mx-auto">
+          <CardContent className="pt-6 pb-6 text-center">
+            <div className="mb-6">
+              <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-blue-100 flex items-center justify-center">
+                <Users className="h-10 w-10 text-blue-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Välkommen till MEDDELA! 👋
+              </h2>
+              <p className="text-gray-600">
+                Skapa din organisation för att komma igång med SMS-plattformen
+              </p>
+            </div>
+            <Link href="/onboarding">
+              <Button size="lg" className="w-full max-w-sm">
+                <Sparkles className="h-5 w-5 mr-2" />
+                Skapa organisation
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Get comprehensive stats
   const [

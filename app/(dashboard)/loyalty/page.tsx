@@ -6,6 +6,8 @@ import { Star, Gift, TrendingUp, Users, Award, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
+// Add import for Link component usage
+
 export default async function LoyaltyPage() {
   const supabase = createServerClient();
 
@@ -23,8 +25,26 @@ export default async function LoyaltyPage() {
     .eq('id', session.user.id)
     .single();
 
+  // Show friendly message instead of redirect
   if (!user?.organization_id) {
-    redirect('/onboarding');
+    return (
+      <div className="p-4 lg:p-8">
+        <Card className="max-w-2xl mx-auto">
+          <CardContent className="pt-6 pb-6 text-center">
+            <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              Skapa din organisation först
+            </h2>
+            <p className="text-gray-600 mb-6">
+              Du behöver skapa en organisation för att använda lojalitetsprogrammet
+            </p>
+            <Link href="/onboarding">
+              <Button size="lg">Skapa organisation</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   // Mock data for now - in production, this would come from database
