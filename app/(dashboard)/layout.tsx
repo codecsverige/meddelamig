@@ -66,15 +66,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }, [pathname]);
 
   const navigation = [
-    { name: '🌹 Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: '🍽️ Restaurant Hub', href: '/restaurant', icon: Star },
-    { name: '⚡ Automatiseringar', href: '/automation', icon: Zap },
-    { name: 'Kontakter', href: '/contacts', icon: Users },
-    { name: 'Meddelanden', href: '/messages', icon: MessageSquare },
-    { name: 'Kampanjer', href: '/campaigns', icon: Send },
-    { name: 'Mallar', href: '/templates', icon: MessageSquare },
-    { name: 'Analys', href: '/analytics', icon: BarChart3 },
-    { name: 'Inställningar', href: '/settings', icon: Settings },
+    { name: 'Översikt', href: '/dashboard', icon: LayoutDashboard, emoji: '🌹' },
+    { name: 'Kontakter', href: '/contacts', icon: Users, emoji: '👥' },
+    { name: 'Meddelanden', href: '/messages', icon: MessageSquare, emoji: '💬' },
+    { name: 'Kampanjer', href: '/campaigns', icon: Send, emoji: '📣' },
+    { name: 'Mallar', href: '/templates', icon: MessageSquare, emoji: '🧩' },
+    { name: 'Automatiseringar', href: '/automation', icon: Zap, emoji: '⚡' },
+    { name: 'Analys', href: '/analytics', icon: BarChart3, emoji: '📈' },
+    { name: 'Inställningar', href: '/settings', icon: Settings, emoji: '⚙️' },
   ];
 
   return (
@@ -126,28 +125,31 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               </div>
             </div>
           </div>
-        )}
+          )}
 
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navigation.map((item) => {
-            const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                  isActive
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
-                }`}
-              >
-                <item.icon className="h-5 w-5" />
-                <span className="font-medium">{item.name}</span>
-              </Link>
-            );
-          })}
-        </nav>
+          {/* Navigation */}
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+            {navigation.map((item) => {
+              const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-blue-50 text-blue-700 font-medium'
+                      : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                  }`}
+                >
+                  <span className="text-lg" aria-hidden>
+                    {item.emoji}
+                  </span>
+                  <item.icon className="h-5 w-5 text-gray-500" />
+                  <span className="font-medium">{item.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
 
         {/* User Menu */}
         {user && (
