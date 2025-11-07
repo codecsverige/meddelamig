@@ -12,6 +12,7 @@ import { displayPhoneNumber } from '@/lib/utils/phone';
 type Message = {
   id: string;
   to_phone: string;
+  from_phone: string | null;
   message: string;
   sender_name: string;
   type: string;
@@ -20,6 +21,7 @@ type Message = {
   created_at: string;
   sent_at: string | null;
   delivered_at: string | null;
+  direction: 'outbound' | 'inbound';
   contacts: {
     name: string;
     phone: string;
@@ -36,6 +38,7 @@ export default function MessagesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedType, setSelectedType] = useState('all');
+  const [selectedDirection, setSelectedDirection] = useState<'all' | 'outbound' | 'inbound'>('all');
   const [dateRange, setDateRange] = useState('all');
 
   useEffect(() => {
@@ -44,7 +47,7 @@ export default function MessagesPage() {
 
   useEffect(() => {
     filterMessages();
-  }, [messages, searchQuery, selectedStatus, selectedType, dateRange]);
+  }, [messages, searchQuery, selectedStatus, selectedType, selectedDirection, dateRange]);
 
   const loadMessages = async () => {
     try {
@@ -88,11 +91,13 @@ export default function MessagesPage() {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(msg =>
-        msg.message.toLowerCase().includes(query) ||
-        msg.to_phone.includes(query) ||
-        msg.contacts?.name?.toLowerCase().includes(query)
-      );
+      filtered = filtered.filter((msg) => {
+        const messageMatch = msg.message.toLowerCase().includes(query);
+        const toMatch = (msg.to_phone || '').toLowerCase().includes(query);
+        const fromMatch = (msg.from_phone || '').toLowerCase().includes(query);
+        const nameMatch = msg.contacts?.name?.toLowerCase().includes(query);
+        return messageMatch || toMatch || fromMatch || Boolean(nameMatch);
+      });
     }
 
     // Status filter
@@ -103,6 +108,10 @@ export default function MessagesPage() {
     // Type filter
     if (selectedType !== 'all') {
       filtered = filtered.filter(msg => msg.type === selectedType);
+    }
+
+    if (selectedDirection !== 'all') {
+      filtered = filtered.filter(msg => msg.direction === selectedDirection);
     }
 
     // Date range filter
@@ -133,6 +142,7 @@ export default function MessagesPage() {
       Datum: new Date(msg.created_at).toLocaleString('sv-SE'),
       Mottagare: msg.contacts?.name || 'Okänd',
       Telefon: msg.to_phone,
+      Riktning: msg.direction === 'inbound' ? 'Inkommande' : 'Utgående',
       Meddelande: msg.message,
       Status: msg.status,
       Typ: msg.type,
@@ -153,12 +163,13 @@ export default function MessagesPage() {
   };
 
   // Calculate stats
+  const outboundMessages = messages.filter((m) => m.direction !== 'inbound');
   const stats = {
-    total: messages.length,
-    delivered: messages.filter(m => m.status === 'delivered').length,
-    failed: messages.filter(m => m.status === 'failed').length,
-    pending: messages.filter(m => m.status === 'pending').length,
-    totalCost: messages.reduce((sum, m) => sum + (m.cost || 0), 0),
+    total: outboundMessages.length,
+    delivered: outboundMessages.filter(m => m.status === 'delivered').length,
+    failed: outboundMessages.filter(m => m.status === 'failed').length,
+    pending: outboundMessages.filter(m => m.status === 'pending').length,
+    totalCost: outboundMessages.reduce((sum, m) => sum + (m.cost || 0), 0),
   };
 
   const deliveryRate = stats.total > 0 
@@ -168,12 +179,18 @@ export default function MessagesPage() {
   return (
     <div className="p-4 lg:p-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Meddelanden</h1>
-          <p className="text-gray-600">Alla dina skickade SMS-meddelanden</p>
-        </div>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Meddelanden</h1>
+            <p className="text-gray-600">Alla utgående och inkommande SMS-konversationer</p>
+          </div>
         <div className="flex gap-2">
+          <Link href="/messages/inbox">
+            <Button variant="secondary">
+              <MessageSquare className="h-4 w-4 mr-2" />
+              Öppna inkorg
+            </Button>
+          </Link>
           <Button variant="outline" onClick={exportToCSV} disabled={filteredMessages.length === 0}>
             <Download className="h-4 w-4 mr-2" />
             Exportera
@@ -247,83 +264,102 @@ export default function MessagesPage() {
         </Card>
       </div>
 
-      {/* Filters */}
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Sök meddelanden..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
+        {/* Filters */}
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Sök meddelanden..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
 
-            {/* Status Filter */}
-            <select
-              value={selectedStatus}
-              onChange={e => setSelectedStatus(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">Alla statusar</option>
-              <option value="delivered">Levererad</option>
-              <option value="sent">Skickad</option>
-              <option value="pending">Väntande</option>
-              <option value="failed">Misslyckad</option>
-            </select>
-
-            {/* Type Filter */}
-            <select
-              value={selectedType}
-              onChange={e => setSelectedType(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">Alla typer</option>
-              <option value="manual">Manuell</option>
-              <option value="marketing">Marknadsföring</option>
-              <option value="reminder">Påminnelse</option>
-              <option value="confirmation">Bekräftelse</option>
-            </select>
-
-            {/* Date Range */}
-            <select
-              value={dateRange}
-              onChange={e => setDateRange(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">All tid</option>
-              <option value="today">Idag</option>
-              <option value="week">Senaste veckan</option>
-              <option value="month">Senaste månaden</option>
-            </select>
-          </div>
-
-          {/* Active Filters Summary */}
-          {(searchQuery || selectedStatus !== 'all' || selectedType !== 'all' || dateRange !== 'all') && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
-              <Filter className="h-4 w-4" />
-              <span>
-                Visar {filteredMessages.length} av {messages.length} meddelanden
-              </span>
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedStatus('all');
-                  setSelectedType('all');
-                  setDateRange('all');
-                }}
-                className="text-blue-600 hover:text-blue-700 ml-2"
+              {/* Status Filter */}
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                Rensa filter
-              </button>
+                <option value="all">Alla statusar</option>
+                <option value="delivered">Levererad</option>
+                <option value="sent">Skickad</option>
+                <option value="pending">Väntande</option>
+                <option value="failed">Misslyckad</option>
+                <option value="received">Mottagen</option>
+              </select>
+
+              {/* Type Filter */}
+              <select
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">Alla typer</option>
+                <option value="manual">Manuell</option>
+                <option value="marketing">Marknadsföring</option>
+                <option value="reminder">Påminnelse</option>
+                <option value="confirmation">Bekräftelse</option>
+              </select>
+
+              {/* Direction Filter */}
+              <select
+                value={selectedDirection}
+                onChange={(e) =>
+                  setSelectedDirection(e.target.value as 'all' | 'outbound' | 'inbound')
+                }
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">Alla riktningar</option>
+                <option value="outbound">Utgående</option>
+                <option value="inbound">Inkommande</option>
+              </select>
+
+              {/* Date Range */}
+              <select
+                value={dateRange}
+                onChange={(e) => setDateRange(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All tid</option>
+                <option value="today">Idag</option>
+                <option value="week">Senaste veckan</option>
+                <option value="month">Senaste månaden</option>
+              </select>
             </div>
-          )}
-        </CardContent>
-      </Card>
+
+            {/* Active Filters Summary */}
+            {(searchQuery ||
+              selectedStatus !== 'all' ||
+              selectedType !== 'all' ||
+              selectedDirection !== 'all' ||
+              dateRange !== 'all') && (
+              <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
+                <Filter className="h-4 w-4" />
+                <span>
+                  Visar {filteredMessages.length} av {messages.length} meddelanden
+                </span>
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedStatus('all');
+                    setSelectedType('all');
+                    setSelectedDirection('all');
+                    setDateRange('all');
+                  }}
+                  className="text-blue-600 hover:text-blue-700 ml-2"
+                >
+                  Rensa filter
+                </button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
       {/* Messages List */}
       {loading ? (
@@ -332,78 +368,97 @@ export default function MessagesPage() {
         </div>
       ) : filteredMessages.length > 0 ? (
         <Card>
-          <CardHeader>
-            <CardTitle>SMS-historik ({filteredMessages.length})</CardTitle>
-            <CardDescription>Alla dina skickade meddelanden</CardDescription>
+            <CardHeader>
+              <CardTitle>SMS-historik ({filteredMessages.length})</CardTitle>
+              <CardDescription>Filtrera dina samtal och se status för varje meddelande</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {filteredMessages.map(message => (
-                <div
-                  key={message.id}
-                  className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex-shrink-0">
-                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold">
-                      {(message.contacts?.name || 'U').charAt(0).toUpperCase()}
+            <CardContent>
+              <div className="space-y-4">
+                {filteredMessages.map((message) => {
+                  const isInbound = message.direction === 'inbound';
+                  const containerClasses = `flex items-start gap-4 p-4 rounded-lg transition-colors border ${
+                    isInbound
+                      ? 'bg-indigo-50/40 border-indigo-100 hover:bg-indigo-100/40'
+                      : 'bg-gray-50 border-gray-100 hover:bg-gray-100'
+                  }`;
+                  const statusBadge =
+                    message.status === 'delivered'
+                      ? 'bg-green-100 text-green-800'
+                      : message.status === 'sent'
+                      ? 'bg-blue-100 text-blue-800'
+                      : message.status === 'failed'
+                      ? 'bg-red-100 text-red-800'
+                      : message.status === 'received'
+                      ? 'bg-indigo-100 text-indigo-800'
+                      : 'bg-gray-100 text-gray-800';
+                  const statusLabel =
+                    message.status === 'delivered'
+                      ? '✅ Levererad'
+                      : message.status === 'sent'
+                      ? '📤 Skickad'
+                      : message.status === 'failed'
+                      ? '❌ Misslyckad'
+                      : message.status === 'received'
+                      ? '📥 Mottagen'
+                      : '⏳ Väntande';
+                  const directionBadge = isInbound
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'bg-blue-50 text-blue-700';
+                  const directionLabel = isInbound ? 'Inkommande' : 'Utgående';
+                  const phoneLine = isInbound
+                    ? `Från ${displayPhoneNumber(message.from_phone || message.contacts?.phone || message.to_phone)}`
+                    : `Till ${displayPhoneNumber(message.to_phone)}`;
+
+                  return (
+                    <div key={message.id} className={containerClasses}>
+                      <div className="flex-shrink-0">
+                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold">
+                          {(message.contacts?.name || 'U').charAt(0).toUpperCase()}
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1 gap-3">
+                          <h4 className="text-sm font-medium text-gray-900 truncate">
+                            {message.contacts?.name || 'Okänd kontakt'}
+                          </h4>
+                          <span className="text-xs text-gray-500">
+                            {new Date(message.created_at).toLocaleString('sv-SE')}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-1">{phoneLine}</p>
+                        <p className="text-sm text-gray-700 mb-2 line-clamp-3">{message.message}</p>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className={`text-xs px-2 py-1 rounded-full ${statusBadge}`}>
+                            {statusLabel}
+                          </span>
+                          <span className={`text-xs px-2 py-1 rounded-full ${directionBadge}`}>
+                            {directionLabel}
+                          </span>
+                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                            {message.type === 'manual'
+                              ? '✍️ Manuell'
+                              : message.type === 'marketing'
+                              ? '📢 Marknadsföring'
+                              : message.type === 'reminder'
+                              ? '⏰ Påminnelse'
+                              : '✅ Bekräftelse'}
+                          </span>
+                          {message.cost && !isInbound && (
+                            <span className="text-xs text-gray-500">
+                              💰 {parseFloat(message.cost.toString()).toFixed(2)} SEK
+                            </span>
+                          )}
+                          {message.delivered_at && !isInbound && (
+                            <span className="text-xs text-gray-500">
+                              Levererad: {new Date(message.delivered_at).toLocaleTimeString('sv-SE')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <h4 className="text-sm font-medium text-gray-900">
-                        {message.contacts?.name || 'Okänd kontakt'}
-                      </h4>
-                      <span className="text-xs text-gray-500">
-                        {new Date(message.created_at).toLocaleString('sv-SE')}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-1">
-                      {displayPhoneNumber(message.to_phone)}
-                    </p>
-                    <p className="text-sm text-gray-700 mb-2 line-clamp-2">
-                      {message.message}
-                    </p>
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span
-                        className={`text-xs px-2 py-1 rounded-full ${
-                          message.status === 'delivered'
-                            ? 'bg-green-100 text-green-800'
-                            : message.status === 'sent'
-                            ? 'bg-blue-100 text-blue-800'
-                            : message.status === 'failed'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {message.status === 'delivered'
-                          ? '✅ Levererad'
-                          : message.status === 'sent'
-                          ? '📤 Skickad'
-                          : message.status === 'failed'
-                          ? '❌ Misslyckad'
-                          : '⏳ Väntande'}
-                      </span>
-                      <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                        {message.type === 'manual' ? '✍️ Manuell' 
-                          : message.type === 'marketing' ? '📢 Marknadsföring'
-                          : message.type === 'reminder' ? '⏰ Påminnelse'
-                          : '✅ Bekräftelse'}
-                      </span>
-                      {message.cost && (
-                        <span className="text-xs text-gray-500">
-                          💰 {parseFloat(message.cost.toString()).toFixed(2)} SEK
-                        </span>
-                      )}
-                      {message.delivered_at && (
-                        <span className="text-xs text-gray-500">
-                          Levererad: {new Date(message.delivered_at).toLocaleTimeString('sv-SE')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  );
+                })}
             </div>
           </CardContent>
         </Card>
@@ -416,15 +471,16 @@ export default function MessagesPage() {
                 Inga meddelanden matchade filtren
               </h3>
               <p className="mb-6">Prova att ändra eller rensa dina filter</p>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedStatus('all');
-                  setSelectedType('all');
-                  setDateRange('all');
-                }}
-              >
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedStatus('all');
+                    setSelectedType('all');
+                    setSelectedDirection('all');
+                    setDateRange('all');
+                  }}
+                >
                 Rensa alla filter
               </Button>
             </div>

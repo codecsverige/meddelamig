@@ -20,9 +20,12 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/components/ui/toast';
+import { displayPhoneNumber } from '@/lib/utils/phone';
+import type { Database } from '@/lib/supabase/types';
 
 interface Contact {
   id: string;
+  organization_id: string;
   name: string;
   phone: string;
   email: string | null;
@@ -44,8 +47,40 @@ interface SMSMessage {
   message: string;
   status: string;
   created_at: string;
-  cost: string;
+  cost: string | number | null;
+  direction: 'outbound' | 'inbound';
+  to_phone: string;
+  from_phone: string | null;
 }
+
+interface ContactNote {
+  id: string;
+  body: string;
+  note_type: 'note' | 'task' | 'alert';
+  created_at: string;
+  author_id: string | null;
+}
+
+type TimelineItem =
+  | {
+      kind: 'sms';
+      id: string;
+      message: string;
+      status: string;
+      cost: number | null;
+      direction: 'outbound' | 'inbound';
+      to_phone: string;
+      from_phone: string | null;
+      created_at: string;
+    }
+  | {
+      kind: 'note';
+      id: string;
+      body: string;
+      note_type: 'note' | 'task' | 'alert';
+      created_at: string;
+      author_id: string | null;
+    };
 
 export default function ContactDetailPage() {
   const params = useParams();
@@ -55,6 +90,9 @@ export default function ContactDetailPage() {
   
   const [contact, setContact] = useState<Contact | null>(null);
   const [smsHistory, setSmsHistory] = useState<SMSMessage[]>([]);
+  const [notes, setNotes] = useState<ContactNote[]>([]);
+  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({
@@ -65,13 +103,58 @@ export default function ContactDetailPage() {
     sms_consent: false,
     marketing_consent: false,
   });
+  const [noteForm, setNoteForm] = useState({
+    body: '',
+    note_type: 'note' as ContactNote['note_type'],
+  });
+  const [submittingNote, setSubmittingNote] = useState(false);
+  const [showInboundForm, setShowInboundForm] = useState(false);
+  const [inboundMessage, setInboundMessage] = useState('');
+  const [loggingInbound, setLoggingInbound] = useState(false);
 
   useEffect(() => {
-    fetchContact();
-    fetchSMSHistory();
+    fetchAll();
   }, [params.id]);
 
-  const fetchContact = async () => {
+  const fetchAll = async () => {
+    setLoading(true);
+    await fetchCurrentUser();
+    try {
+      const [contactData, smsData, noteData] = await Promise.all([
+        fetchContact(),
+        fetchSMSHistory(),
+        fetchNotes(),
+      ]);
+
+      if (contactData) {
+        setContact(contactData);
+        setFormData({
+          name: contactData.name || '',
+          phone: contactData.phone,
+          email: contactData.email || '',
+          tags: (contactData.tags || []).join(', '),
+          sms_consent: contactData.sms_consent || false,
+          marketing_consent: contactData.marketing_consent || false,
+        });
+      }
+
+      setSmsHistory(smsData);
+      setNotes(noteData);
+      recomputeTimeline(smsData, noteData);
+    } catch (error) {
+      console.error('Error fetching contact data', error);
+      showToast('Kunde inte ladda kontaktdata', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCurrentUser = async () => {
+    const { data } = await supabase.auth.getSession();
+    setCurrentUserId(data.session?.user.id ?? null);
+  };
+
+  const fetchContact = async (): Promise<Contact | null> => {
     try {
       const { data, error } = await supabase
         .from('contacts')
@@ -81,25 +164,14 @@ export default function ContactDetailPage() {
         .single();
 
       if (error) throw error;
-
-      setContact(data);
-      setFormData({
-        name: data.name || '',
-        phone: data.phone,
-        email: data.email || '',
-        tags: (data.tags || []).join(', '),
-        sms_consent: data.sms_consent || false,
-        marketing_consent: data.marketing_consent || false,
-      });
+      return data as Contact;
     } catch (error) {
       console.error('Error fetching contact:', error);
-      showToast('Kunde inte ladda kontakt', 'error');
-    } finally {
-      setLoading(false);
+      throw error;
     }
   };
 
-  const fetchSMSHistory = async () => {
+  const fetchSMSHistory = async (): Promise<SMSMessage[]> => {
     try {
       const { data, error } = await supabase
         .from('sms_messages')
@@ -109,9 +181,153 @@ export default function ContactDetailPage() {
         .limit(20);
 
       if (error) throw error;
-      setSmsHistory(data || []);
+      return (data || []) as SMSMessage[];
     } catch (error) {
       console.error('Error fetching SMS history:', error);
+      throw error;
+    }
+  };
+
+  const fetchNotes = async (): Promise<ContactNote[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('contact_notes')
+        .select('id, body, note_type, created_at, author_id')
+        .eq('contact_id', params.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      return (data || []) as ContactNote[];
+    } catch (error) {
+      console.error('Error fetching notes:', error);
+      throw error;
+    }
+  };
+
+  const recomputeTimeline = (sms: SMSMessage[], noteItems: ContactNote[]) => {
+    const smsEvents: TimelineItem[] = sms.map((message) => ({
+      kind: 'sms',
+      id: message.id,
+      message: message.message,
+      status: message.status,
+      cost: message.cost === null ? null : Number(message.cost ?? 0),
+      direction: message.direction,
+      to_phone: message.to_phone,
+      from_phone: message.from_phone,
+      created_at: message.created_at,
+    }));
+
+    const noteEvents: TimelineItem[] = noteItems.map((note) => ({
+      kind: 'note',
+      id: note.id,
+      body: note.body,
+      note_type: note.note_type,
+      created_at: note.created_at,
+      author_id: note.author_id,
+    }));
+
+    const combined = [...smsEvents, ...noteEvents].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+    setTimeline(combined);
+  };
+
+  const handleCreateNote = async () => {
+    if (!contact) {
+      showToast('Kontaktdata inte laddad ännu', 'error');
+      return;
+    }
+    if (!noteForm.body.trim()) {
+      showToast('Skriv något i anteckningen först', 'warning');
+      return;
+    }
+
+    try {
+      setSubmittingNote(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user.id ?? null;
+
+      const { error } = await supabase.from('contact_notes').insert({
+        organization_id: contact.organization_id,
+        contact_id: contact.id,
+        author_id: userId,
+        note_type: noteForm.note_type,
+        body: noteForm.body.trim(),
+      } satisfies Database['public']['Tables']['contact_notes']['Insert']);
+
+      if (error) throw error;
+
+      showToast('Anteckning sparad', 'success');
+      setNoteForm({ body: '', note_type: 'note' });
+      const noteData = await fetchNotes();
+      setNotes(noteData);
+      recomputeTimeline(smsHistory, noteData);
+    } catch (error) {
+      console.error('Error creating note:', error);
+      showToast('Kunde inte spara anteckning', 'error');
+    } finally {
+      setSubmittingNote(false);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (!confirm('Ta bort anteckningen?')) return;
+    try {
+      const { error } = await supabase.from('contact_notes').delete().eq('id', noteId);
+      if (error) throw error;
+      showToast('Anteckning borttagen', 'success');
+      const noteData = await fetchNotes();
+      setNotes(noteData);
+      recomputeTimeline(smsHistory, noteData);
+    } catch (error) {
+      console.error('Error deleting note:', error);
+      showToast('Kunde inte ta bort anteckning', 'error');
+    }
+  };
+
+  const handleLogInboundSms = async () => {
+    if (!contact) {
+      showToast('Kontaktdata inte laddad ännu', 'error');
+      return;
+    }
+    if (!inboundMessage.trim()) {
+      showToast('Skriv meddelandet först', 'warning');
+      return;
+    }
+
+    try {
+      setLoggingInbound(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user.id ?? null;
+
+      const { error } = await supabase.from('sms_messages').insert({
+        organization_id: contact.organization_id,
+        contact_id: contact.id,
+        user_id: userId,
+        to_phone: contact.phone,
+        from_phone: contact.phone,
+        message: inboundMessage.trim(),
+        sender_name: contact.name || contact.phone,
+        type: 'manual',
+        direction: 'inbound',
+        status: 'received',
+        cost: 0,
+      } satisfies Database['public']['Tables']['sms_messages']['Insert']);
+
+      if (error) throw error;
+
+      showToast('Inkommande SMS loggat', 'success');
+      setInboundMessage('');
+      setShowInboundForm(false);
+      const smsData = await fetchSMSHistory();
+      setSmsHistory(smsData);
+      recomputeTimeline(smsData, notes);
+    } catch (error) {
+      console.error('Error logging inbound SMS:', error);
+      showToast('Kunde inte logga inkommande SMS', 'error');
+    } finally {
+      setLoggingInbound(false);
     }
   };
 
@@ -119,8 +335,8 @@ export default function ContactDetailPage() {
     try {
       const tags = formData.tags
         .split(',')
-        .map(t => t.trim())
-        .filter(t => t);
+        .map((t) => t.trim())
+        .filter((t) => t);
 
       const { error } = await supabase
         .from('contacts')
@@ -139,9 +355,9 @@ export default function ContactDetailPage() {
 
       showToast('Kontakt uppdaterad! ✅', 'success');
       setEditing(false);
-      fetchContact();
+      await fetchAll();
     } catch (error) {
-      console.error('Error updating contact:', error);
+      console.error('Error updating kontakt:', error);
       showToast('Kunde inte uppdatera kontakt', 'error');
     }
   };
@@ -242,7 +458,7 @@ export default function ContactDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Contact Info */}
-        <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Kontaktinformation</CardTitle>
@@ -426,59 +642,195 @@ export default function ContactDetailPage() {
             </CardContent>
           </Card>
 
-          {/* SMS History */}
           <Card>
             <CardHeader>
-              <CardTitle>SMS-historik ({smsHistory.length})</CardTitle>
+                <CardTitle>Tidslinje & anteckningar</CardTitle>
             </CardHeader>
             <CardContent>
-              {smsHistory.length > 0 ? (
                 <div className="space-y-4">
-                  {smsHistory.map((sms) => (
-                    <div
-                      key={sms.id}
-                      className="p-4 bg-gray-50 rounded-lg border border-gray-200"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            sms.status === 'delivered'
-                              ? 'bg-green-100 text-green-800'
-                              : sms.status === 'sent'
-                              ? 'bg-blue-100 text-blue-800'
-                              : sms.status === 'failed'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
+                  <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                    <textarea
+                      value={noteForm.body}
+                      onChange={(e) => setNoteForm((prev) => ({ ...prev, body: e.target.value }))}
+                      placeholder="Lägg till en anteckning om samtal, uppgift eller någonting att följa upp..."
+                      rows={3}
+                      className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+                    />
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                          Typ
+                        </label>
+                        <select
+                          value={noteForm.note_type}
+                          onChange={(e) =>
+                            setNoteForm((prev) => ({
+                              ...prev,
+                              note_type: e.target.value as ContactNote['note_type'],
+                            }))
+                          }
+                          className="border border-gray-200 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
                         >
-                          {sms.status === 'delivered'
-                            ? 'Levererad'
-                            : sms.status === 'sent'
-                            ? 'Skickad'
-                            : sms.status === 'failed'
-                            ? 'Misslyckades'
-                            : 'Väntar'}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(sms.created_at).toLocaleString('sv-SE')}
-                        </span>
+                          <option value="note">Anteckning</option>
+                          <option value="task">Uppgift</option>
+                          <option value="alert">Flagga</option>
+                        </select>
                       </div>
-                      <p className="text-sm text-gray-700">{sms.message}</p>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Kostnad: {parseFloat(sms.cost).toFixed(2)} SEK
-                      </p>
+                      <Button onClick={handleCreateNote} disabled={submittingNote}>
+                        {submittingNote ? 'Sparar...' : 'Lägg till'}
+                      </Button>
                     </div>
-                  ))}
+                  </div>
+
+                  <div className="border border-indigo-100 rounded-lg p-4 bg-white">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900">Logga inkommande SMS</h4>
+                        <p className="text-xs text-gray-500">
+                          Registrera svar du fått via telefon eller annan kanal så att teamet ser hela bilden.
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowInboundForm((prev) => !prev)}
+                      >
+                        {showInboundForm ? 'Stäng' : 'Öppna'}
+                      </Button>
+                    </div>
+                    {showInboundForm && (
+                      <div className="mt-3 space-y-3">
+                        <textarea
+                          value={inboundMessage}
+                          onChange={(e) => setInboundMessage(e.target.value)}
+                          placeholder="Ex: “Hej, jag vill ändra tiden till 15:00 istället.”"
+                          rows={3}
+                          className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-white"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setShowInboundForm(false);
+                              setInboundMessage('');
+                            }}
+                          >
+                            Avbryt
+                          </Button>
+                          <Button size="sm" onClick={handleLogInboundSms} disabled={loggingInbound}>
+                            {loggingInbound ? 'Loggar...' : 'Spara'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    {timeline.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <MessageSquare className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                        <p>Ingen historik ännu. Lägg till en anteckning eller skicka ditt första SMS.</p>
+                      </div>
+                    ) : (
+                      timeline.map((item) => {
+                        if (item.kind === 'note') {
+                          const badgeClasses =
+                            item.note_type === 'task'
+                              ? 'bg-amber-100 text-amber-700'
+                              : item.note_type === 'alert'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-blue-100 text-blue-700';
+                          return (
+                            <div key={`note-${item.id}`} className="border border-gray-200 rounded-lg p-4 bg-white">
+                              <div className="flex items-start justify-between gap-3">
+                                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${badgeClasses}`}>
+                                  {item.note_type === 'task'
+                                    ? 'Uppgift'
+                                    : item.note_type === 'alert'
+                                    ? 'Flagga'
+                                    : 'Anteckning'}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  {new Date(item.created_at).toLocaleString('sv-SE')}
+                                </span>
+                              </div>
+                              <p className="mt-3 text-sm text-gray-800 whitespace-pre-wrap">{item.body}</p>
+                              {currentUserId && (!item.author_id || currentUserId === item.author_id) && (
+                                <div className="mt-3 text-right">
+                                  <button
+                                    onClick={() => handleDeleteNote(item.id)}
+                                    className="text-xs font-semibold text-red-500 hover:text-red-600"
+                                  >
+                                    Ta bort
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        const statusColor =
+                          item.status === 'delivered'
+                            ? 'bg-green-100 text-green-800'
+                            : item.status === 'failed'
+                            ? 'bg-red-100 text-red-700'
+                            : item.status === 'sent'
+                            ? 'bg-blue-100 text-blue-800'
+                            : item.status === 'received'
+                            ? 'bg-indigo-100 text-indigo-800'
+                            : 'bg-gray-100 text-gray-700';
+                        const statusLabel =
+                          item.status === 'delivered'
+                            ? 'Levererad'
+                            : item.status === 'sent'
+                            ? 'Skickad'
+                            : item.status === 'failed'
+                            ? 'Misslyckad'
+                            : item.status === 'received'
+                            ? 'Mottagen'
+                            : 'Väntande';
+                        const directionBadge =
+                          item.direction === 'inbound'
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'bg-blue-50 text-blue-700';
+                        const directionLabel =
+                          item.direction === 'inbound' ? 'Inkommande' : 'Utgående';
+                        const phoneLabel =
+                          item.direction === 'inbound'
+                            ? `Från ${displayPhoneNumber(item.from_phone ?? contact.phone)}`
+                            : `Till ${displayPhoneNumber(item.to_phone)}`;
+
+                        return (
+                          <div key={`sms-${item.id}`} className="border border-gray-200 rounded-lg p-4 bg-white">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColor}`}>
+                                  {statusLabel}
+                                </span>
+                                <span
+                                  className={`px-2 py-1 text-xs font-semibold rounded-full ${directionBadge}`}
+                                >
+                                  {directionLabel}
+                                </span>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {new Date(item.created_at).toLocaleString('sv-SE')}
+                              </span>
+                            </div>
+                            <p className="mt-3 text-sm text-gray-800 whitespace-pre-wrap">{item.message}</p>
+                            <p className="mt-2 text-xs text-gray-500">{phoneLabel}</p>
+                            {item.cost !== null && (
+                              <p className="mt-2 text-xs text-gray-500">
+                                Kostnad: {item.cost.toFixed(2)} SEK
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>Inga SMS skickade ännu</p>
-                  <Link href={`/messages/send?contactId=${contact.id}`} className="mt-3 inline-block">
-                    <Button size="sm">Skicka första SMS</Button>
-                  </Link>
-                </div>
-              )}
             </CardContent>
           </Card>
         </div>
@@ -528,16 +880,20 @@ export default function ContactDetailPage() {
                 <p className="text-2xl font-bold text-blue-600">
                   {contact.total_bookings || 0}
                 </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Total kostnad</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {smsHistory
-                    .reduce((sum, s) => sum + parseFloat(s.cost || '0'), 0)
-                    .toFixed(2)}{' '}
-                  SEK
-                </p>
-              </div>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Total kostnad</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {smsHistory
+                      .reduce((sum, s) => {
+                        const cost =
+                          typeof s.cost === 'number' ? s.cost : Number(s.cost ?? 0);
+                        return sum + cost;
+                      }, 0)
+                      .toFixed(2)}{' '}
+                    SEK
+                  </p>
+                </div>
               {contact.last_visit_date && (
                 <div>
                   <p className="text-sm text-gray-500">Senaste besök</p>
