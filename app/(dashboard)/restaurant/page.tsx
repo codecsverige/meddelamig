@@ -25,7 +25,17 @@ type QuickCampaign = {
 
 type ContactRecord = {
   id: string;
+  name?: string | null;
+  phone?: string | null;
   tags?: string[] | null;
+  birthday?: string | null;
+  marketing_consent?: boolean | null;
+  created_at?: string | null;
+};
+
+type ContactWithActivity = ContactRecord & {
+  lastSmsAt: string | null;
+  marketing_consent?: boolean;
 };
 
 export default function RestaurantHubPage() {
@@ -41,6 +51,10 @@ export default function RestaurantHubPage() {
     inactiveContacts: 0,
     upcomingBirthdays: 0,
   });
+  const [contacts, setContacts] = useState<ContactWithActivity[]>([]);
+  const [upcomingBirthdays, setUpcomingBirthdays] = useState<
+    Array<{ id: string; name: string | null | undefined; birthday: string; formattedDate: string; daysUntil: number }>
+  >([]);
 
   useEffect(() => {
     loadStats();
@@ -60,44 +74,105 @@ export default function RestaurantHubPage() {
         .eq('id', session.user.id)
         .single();
 
-        if (!user?.organization_id) {
-          setNeedsOnboarding(true);
-          setStats({
-            totalContacts: 0,
-            vipContacts: 0,
-            inactiveContacts: 0,
-            upcomingBirthdays: 0,
-          });
-          return;
+      if (!user?.organization_id) {
+        setNeedsOnboarding(true);
+        setStats({
+          totalContacts: 0,
+          vipContacts: 0,
+          inactiveContacts: 0,
+          upcomingBirthdays: 0,
+        });
+        setContacts([]);
+        setUpcomingBirthdays([]);
+        return;
+      }
+
+      setNeedsOnboarding(false);
+
+      const [{ data: contactsRes, error: contactsError }, { data: smsRes, error: smsError }] = await Promise.all([
+        supabase
+          .from('contacts')
+          .select('id, name, phone, tags, birthday, marketing_consent, created_at')
+          .eq('organization_id', user.organization_id)
+          .is('deleted_at', null),
+        supabase
+          .from('sms_messages')
+          .select('contact_id, created_at')
+          .eq('organization_id', user.organization_id)
+          .neq('contact_id', null)
+          .order('created_at', { ascending: false })
+          .limit(2000),
+      ]);
+
+      if (contactsError) throw contactsError;
+      if (smsError) throw smsError;
+
+      const contactList = (contactsRes ?? []) as ContactRecord[];
+      const smsList = (smsRes ?? []) as Array<{ contact_id: string | null; created_at: string }>;
+
+      const lastSmsMap = new Map<string, string>();
+      smsList.forEach((sms) => {
+        const contactId = sms.contact_id as string | null;
+        if (!contactId) return;
+        if (!lastSmsMap.has(contactId)) {
+          lastSmsMap.set(contactId, sms.created_at as string);
         }
-
-        setNeedsOnboarding(false);
-
-      // Get contacts stats
-      const { data: contacts } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('organization_id', user.organization_id)
-        .is('deleted_at', null);
-
-      const contactList = (contacts ?? []) as ContactRecord[];
+      });
 
       const vipCount = contactList.filter((contact) =>
-        contact.tags?.includes('VIP') || contact.tags?.includes('vip')
+        contact.tags?.some((tag) => tag.toLowerCase() === 'vip'),
       ).length;
 
-      // Inactive: no SMS in last 60 days (mock for now)
-      const inactiveCount = Math.floor(contactList.length * 0.2);
+      const now = new Date();
+      const inactiveThreshold = new Date();
+      inactiveThreshold.setDate(now.getDate() - 60);
 
-      // Upcoming birthdays in next 7 days (mock for now)
-      const birthdayCount = Math.floor(contactList.length * 0.05);
+      const inactiveCount = contactList.filter((contact) => {
+        const lastSmsAt = lastSmsMap.get(contact.id);
+        if (!lastSmsAt) {
+          const createdAt = contact.created_at ? new Date(contact.created_at) : null;
+          return !createdAt || createdAt < inactiveThreshold;
+        }
+        return new Date(lastSmsAt) < inactiveThreshold;
+      }).length;
+
+      const upcomingList: Array<{ id: string; name: string | null | undefined; birthday: string; formattedDate: string; daysUntil: number }> = [];
+      contactList.forEach((contact) => {
+        if (!contact.birthday) return;
+        const raw = new Date(contact.birthday);
+        if (Number.isNaN(raw.getTime())) return;
+        const thisYear = new Date(now.getFullYear(), raw.getMonth(), raw.getDate());
+        const nextOccurrence =
+          thisYear < now ? new Date(now.getFullYear() + 1, raw.getMonth(), raw.getDate()) : thisYear;
+        const daysUntil = Math.ceil((nextOccurrence.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysUntil >= 0 && daysUntil <= 30) {
+          upcomingList.push({
+            id: contact.id,
+            name: contact.name,
+            birthday: contact.birthday,
+            formattedDate: nextOccurrence.toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' }),
+            daysUntil,
+          });
+        }
+      });
+
+      upcomingList.sort((a, b) => a.daysUntil - b.daysUntil);
+      const upcomingTop = upcomingList.slice(0, 6);
 
       setStats({
         totalContacts: contactList.length,
         vipContacts: vipCount,
         inactiveContacts: inactiveCount,
-        upcomingBirthdays: birthdayCount,
+        upcomingBirthdays: upcomingList.length,
       });
+      setContacts(
+        contactList.map((contact) => ({
+          ...contact,
+          marketing_consent: Boolean(contact.marketing_consent),
+          lastSmsAt: lastSmsMap.get(contact.id) ?? null,
+        })),
+      );
+      setUpcomingBirthdays(upcomingTop);
     } catch (error) {
       console.error('Failed to load stats:', error);
     } finally {
@@ -168,6 +243,34 @@ export default function RestaurantHubPage() {
     },
   ];
 
+  const inactiveThresholdDate = (() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 60);
+    return date;
+  })();
+
+  const filterContactsForCampaign = (campaign: QuickCampaign) => {
+    let filtered = contacts.filter((contact) => contact.marketing_consent);
+
+    if (campaign.targetType === 'vip') {
+      filtered = filtered.filter((contact) =>
+        contact.tags?.some((tag) => tag.toLowerCase() === 'vip'),
+      );
+    } else if (campaign.targetType === 'inactive') {
+      filtered = filtered.filter((contact) => {
+        if (!contact.lastSmsAt) return true;
+        return new Date(contact.lastSmsAt) < inactiveThresholdDate;
+      });
+    } else if (campaign.targetType === 'recent') {
+      filtered = filtered.filter((contact) => {
+        if (!contact.lastSmsAt) return false;
+        return new Date(contact.lastSmsAt) >= inactiveThresholdDate;
+      });
+    }
+
+    return filtered;
+  };
+
   const handleQuickCampaign = async (campaign: QuickCampaign) => {
     if (!confirm(`Skicka "${campaign.title}" till ${campaign.targetType === 'vip' ? 'VIP-kunder' : campaign.targetType === 'inactive' ? 'inaktiva kunder' : 'alla kunder'}?`)) {
       return;
@@ -185,22 +288,9 @@ export default function RestaurantHubPage() {
 
       if (!user?.organization_id) throw new Error('Ingen organisation');
 
-      // Get target contacts based on type
-      let query = supabase
-        .from('contacts')
-        .select('*')
-        .eq('organization_id', user.organization_id)
-        .eq('marketing_consent', true)
-        .is('deleted_at', null);
+      const targets = filterContactsForCampaign(campaign);
 
-      if (campaign.targetType === 'vip') {
-        query = query.or('tags.cs.{VIP},tags.cs.{vip}');
-      }
-
-      const { data: contacts } = await query;
-      const contactList = (contacts ?? []) as ContactRecord[];
-
-      if (contactList.length === 0) {
+      if (targets.length === 0) {
         showToast('Inga kontakter hittades för denna kampanj', 'error');
         return;
       }
@@ -209,7 +299,7 @@ export default function RestaurantHubPage() {
       const campaignData = {
         name: campaign.title,
         message: campaign.message,
-        targetContactIds: contactList.map((contact) => contact.id),
+        targetContactIds: targets.map((contact) => contact.id),
       };
 
       // Save to sessionStorage and redirect
@@ -318,11 +408,11 @@ export default function RestaurantHubPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Födelsedagar</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.upcomingBirthdays}</p>
-                <p className="text-xs text-pink-600 mt-1">Nästa 7 dagar</p>
-              </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Födelsedagar</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.upcomingBirthdays}</p>
+                  <p className="text-xs text-pink-600 mt-1">Nästa 30 dagar</p>
+                </div>
               <div className="p-3 rounded-lg bg-pink-50">
                 <Calendar className="h-6 w-6 text-pink-600" />
               </div>
@@ -330,6 +420,42 @@ export default function RestaurantHubPage() {
           </CardContent>
         </Card>
       </div>
+
+      {upcomingBirthdays.length > 0 && (
+        <Card className="mb-8 border border-pink-100">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Gift className="h-5 w-5 text-pink-600" />
+              Kommande födelsedagar (30 dagar)
+            </CardTitle>
+            <CardDescription>
+              Perfekt tillfälle att skicka ett personligt SMS och stärka relationen.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {upcomingBirthdays.map((birthday) => (
+              <div
+                key={birthday.id}
+                className="rounded-lg border border-pink-100 bg-white p-4"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-semibold text-gray-900">
+                    {birthday.name || 'Okänd kontakt'}
+                  </p>
+                  <span className="text-xs font-medium text-pink-600 bg-pink-50 px-2 py-1 rounded-full">
+                    {birthday.daysUntil === 0
+                      ? 'Idag 🎉'
+                      : birthday.daysUntil === 1
+                      ? 'Imorgon'
+                      : `Om ${birthday.daysUntil} dagar`}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600">{birthday.formattedDate}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick Campaign Templates */}
       <Card className="mb-8">
@@ -344,7 +470,9 @@ export default function RestaurantHubPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {quickCampaigns.map((campaign) => (
+              {quickCampaigns.map((campaign) => {
+                const targetCount = filterContactsForCampaign(campaign).length;
+                return (
               <button
                 key={campaign.id}
                 onClick={() => handleQuickCampaign(campaign)}
@@ -366,14 +494,19 @@ export default function RestaurantHubPage() {
                 <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 line-clamp-2">
                   "{campaign.message.substring(0, 80)}..."
                 </div>
-                <div className="mt-3 flex items-center justify-between">
+                  <div className="mt-3 flex items-center justify-between">
                   <span className="text-xs font-medium text-blue-600">
-                    {campaign.targetType === 'vip' ? '→ VIP' : campaign.targetType === 'inactive' ? '→ Inaktiva' : '→ Alla'}
+                      {campaign.targetType === 'vip'
+                        ? `→ VIP (${targetCount})`
+                        : campaign.targetType === 'inactive'
+                        ? `→ Inaktiva (${targetCount})`
+                        : `→ Alla (${targetCount})`}
                   </span>
                   <Send className="h-4 w-4 text-gray-400 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
