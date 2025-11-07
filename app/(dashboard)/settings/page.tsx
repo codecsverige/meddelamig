@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Save, Loader2, AlertCircle, CheckCircle, Users, Bell, Shield, CreditCard } from 'lucide-react';
@@ -17,6 +18,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [organization, setOrganization] = useState<any>(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   const [orgForm, setOrgForm] = useState({
     name: '',
@@ -51,10 +53,14 @@ export default function SettingsPage() {
       setUser(userData);
       setUserForm({ full_name: userData.full_name });
 
-      if (!userData.organization_id) {
-        router.push('/onboarding');
-        return;
-      }
+        if (!userData.organization_id) {
+          setNeedsOnboarding(true);
+          setOrganization(null);
+          setLoading(false);
+          return;
+        }
+
+        setNeedsOnboarding(false);
 
       const { data: orgData, error: orgError } = await supabase
         .from('organizations')
@@ -135,6 +141,33 @@ export default function SettingsPage() {
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
           <p className="text-gray-500">Laddar inställningar...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (needsOnboarding) {
+    return (
+      <div className="p-4 lg:p-8 max-w-4xl">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Inställningar</h1>
+          <p className="text-gray-600">Hantera ditt konto och organisationsinställningar</p>
+        </div>
+        <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/30">
+          <CardHeader>
+            <CardTitle>Slutför onboarding för att låsa upp inställningarna</CardTitle>
+            <CardDescription>
+              När organisationen är registrerad kan du uppdatera avsändarnamn, kontaktuppgifter och teamet här.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <p className="text-sm text-gray-600">
+              Gå igenom onboarding-flödet så kopplas kontot till din verksamhet och du kan justera inställningar.
+            </p>
+            <Link href="/onboarding">
+              <Button>Gå till onboarding</Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     );
   }

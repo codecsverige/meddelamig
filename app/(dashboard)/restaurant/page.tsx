@@ -34,6 +34,7 @@ export default function RestaurantHubPage() {
   const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [stats, setStats] = useState({
     totalContacts: 0,
     vipContacts: 0,
@@ -59,10 +60,18 @@ export default function RestaurantHubPage() {
         .eq('id', session.user.id)
         .single();
 
-      if (!user?.organization_id) {
-        router.push('/onboarding');
-        return;
-      }
+        if (!user?.organization_id) {
+          setNeedsOnboarding(true);
+          setStats({
+            totalContacts: 0,
+            vipContacts: 0,
+            inactiveContacts: 0,
+            upcomingBirthdays: 0,
+          });
+          return;
+        }
+
+        setNeedsOnboarding(false);
 
       // Get contacts stats
       const { data: contacts } = await supabase
@@ -218,6 +227,35 @@ export default function RestaurantHubPage() {
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-600 mb-4"></div>
           <p className="text-gray-500">Laddar...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (needsOnboarding) {
+    return (
+      <div className="p-4 lg:p-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">🍽️ Restaurant Hub</h1>
+          <p className="text-gray-600">
+            Kraftfulla verktyg designade specifikt för restauranger - inga krångel!
+          </p>
+        </div>
+        <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/30">
+          <CardHeader>
+            <CardTitle>Slutför onboarding för att se restaurangöversikten</CardTitle>
+            <CardDescription>
+              När organisationen är registrerad kan vi visa gästantal, VIP-status, kampanjer och snabbåtgärder här.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <p className="text-sm text-gray-600">
+              Gå igenom onboarding så kopplar vi Restaurant Hub till rätt verksamhet och kontakter.
+            </p>
+            <Link href="/onboarding">
+              <Button>Gå till onboarding</Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     );
   }

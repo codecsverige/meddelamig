@@ -52,6 +52,7 @@ export default function InboxPage() {
   const [newMessage, setNewMessage] = useState('');
   const [loggingInbound, setLoggingInbound] = useState(false);
   const [inboundMessage, setInboundMessage] = useState('');
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   const activeConversation = useMemo(() => {
     if (!activeThreadKey) return null;
@@ -83,10 +84,14 @@ export default function InboxPage() {
 
       if (userError) throw userError;
       if (!userRow?.organization_id) {
-        router.push('/onboarding');
+        setNeedsOnboarding(true);
+        setOrganizationId(null);
+        setConversations([]);
+        setActiveThreadKey(null);
         return;
       }
 
+      setNeedsOnboarding(false);
       setOrganizationId(userRow.organization_id);
 
       const { data: smsRows, error: smsError } = await supabase
@@ -321,7 +326,24 @@ export default function InboxPage() {
         </div>
       </div>
 
-      {conversations.length === 0 ? (
+      {needsOnboarding ? (
+        <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/40">
+          <CardHeader>
+            <CardTitle>Slutför onboarding för att använda inkorgen</CardTitle>
+            <CardDescription>
+              Du behöver koppla din organisation innan vi kan visa konversationer och svar.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <p className="text-sm text-gray-600">
+              När onboarding är klart ser du här hela konversationshistoriken och kan svara direkt från Meddela.
+            </p>
+            <Link href="/onboarding">
+              <Button>Gå till onboarding</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      ) : conversations.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-gray-500">
             <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />

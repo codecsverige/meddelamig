@@ -64,6 +64,7 @@ export default function AutomationPage() {
   const [automationSettings, setAutomationSettings] = useState<AutomationSettings>(defaultAutomationSettings);
   const [automationDirty, setAutomationDirty] = useState(false);
   const [savingAutomations, setSavingAutomations] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -88,12 +89,19 @@ export default function AutomationPage() {
         throw userError;
       }
 
-      if (!user?.organization_id) {
-        router.push('/onboarding');
-        return;
-      }
+        if (!user?.organization_id) {
+          setNeedsOnboarding(true);
+          setOrganizationId(null);
+          setTemplateOptions([]);
+          setUpcomingBirthdays([]);
+          setAutomationSettings(defaultAutomationSettings);
+          setAutomationDirty(false);
+          setLoading(false);
+          return;
+        }
 
-      setOrganizationId(user.organization_id);
+        setNeedsOnboarding(false);
+        setOrganizationId(user.organization_id);
 
       const [contactsRes, templatesRes, organizationRes] = await Promise.all([
         supabase
@@ -421,6 +429,35 @@ export default function AutomationPage() {
           <Loader2 className="inline-block animate-spin h-12 w-12 text-blue-600 mb-4" />
           <p className="text-gray-500">Laddar automatiseringar...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (needsOnboarding) {
+    return (
+      <div className="p-4 lg:p-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">⚡ Automatiseringar</h1>
+          <p className="text-gray-600">
+            Låt MEDDELA jobba åt dig - automatiska kampanjer som sparar tid och ökar intäkter
+          </p>
+        </div>
+        <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/30">
+          <CardHeader>
+            <CardTitle>Slutför onboarding för att aktivera automatiseringar</CardTitle>
+            <CardDescription>
+              Koppla först din organisation så kan vi skicka bekräftelser, påminnelser och uppföljningar automatiskt.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <p className="text-sm text-gray-600">
+              När onboarding är klar kan du välja mallar, scheman och målgrupper för varje flöde.
+            </p>
+            <Link href="/onboarding">
+              <Button>Gå till onboarding</Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     );
   }

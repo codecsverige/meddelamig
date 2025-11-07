@@ -35,6 +35,7 @@ export default function MessagesPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [filteredMessages, setFilteredMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedType, setSelectedType] = useState('all');
@@ -64,9 +65,13 @@ export default function MessagesPage() {
         .single();
 
       if (!user?.organization_id) {
-        router.push('/onboarding');
+        setNeedsOnboarding(true);
+        setMessages([]);
+        setFilteredMessages([]);
         return;
       }
+
+      setNeedsOnboarding(false);
 
       const { data, error } = await supabase
         .from('sms_messages')
@@ -204,306 +209,322 @@ export default function MessagesPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Totalt skickade</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-              </div>
-              <div className="p-3 rounded-lg bg-blue-50">
-                <MessageSquare className="h-6 w-6 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Levererade</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.delivered}</p>
-                <p className="text-xs text-green-600 mt-1">{deliveryRate}% leveransfrekvens</p>
-              </div>
-              <div className="p-3 rounded-lg bg-green-50">
-                <CheckCircle className="h-6 w-6 text-green-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Misslyckade</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.failed}</p>
-              </div>
-              <div className="p-3 rounded-lg bg-red-50">
-                <XCircle className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Total kostnad</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalCost.toFixed(2)} SEK</p>
-              </div>
-              <div className="p-3 rounded-lg bg-purple-50">
-                <TrendingUp className="h-6 w-6 text-purple-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-        {/* Filters */}
-        <Card className="mb-6">
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              {/* Search */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Sök meddelanden..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-
-              {/* Status Filter */}
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">Alla statusar</option>
-                <option value="delivered">Levererad</option>
-                <option value="sent">Skickad</option>
-                <option value="pending">Väntande</option>
-                <option value="failed">Misslyckad</option>
-                <option value="received">Mottagen</option>
-              </select>
-
-              {/* Type Filter */}
-              <select
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">Alla typer</option>
-                <option value="manual">Manuell</option>
-                <option value="marketing">Marknadsföring</option>
-                <option value="reminder">Påminnelse</option>
-                <option value="confirmation">Bekräftelse</option>
-              </select>
-
-              {/* Direction Filter */}
-              <select
-                value={selectedDirection}
-                onChange={(e) =>
-                  setSelectedDirection(e.target.value as 'all' | 'outbound' | 'inbound')
-                }
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">Alla riktningar</option>
-                <option value="outbound">Utgående</option>
-                <option value="inbound">Inkommande</option>
-              </select>
-
-              {/* Date Range */}
-              <select
-                value={dateRange}
-                onChange={(e) => setDateRange(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">All tid</option>
-                <option value="today">Idag</option>
-                <option value="week">Senaste veckan</option>
-                <option value="month">Senaste månaden</option>
-              </select>
-            </div>
-
-            {/* Active Filters Summary */}
-            {(searchQuery ||
-              selectedStatus !== 'all' ||
-              selectedType !== 'all' ||
-              selectedDirection !== 'all' ||
-              dateRange !== 'all') && (
-              <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
-                <Filter className="h-4 w-4" />
-                <span>
-                  Visar {filteredMessages.length} av {messages.length} meddelanden
-                </span>
-                <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSelectedStatus('all');
-                    setSelectedType('all');
-                    setSelectedDirection('all');
-                    setDateRange('all');
-                  }}
-                  className="text-blue-600 hover:text-blue-700 ml-2"
-                >
-                  Rensa filter
-                </button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-      {/* Messages List */}
-      {loading ? (
-        <div className="text-center py-12">
-          <p className="text-gray-500">Laddar meddelanden...</p>
-        </div>
-      ) : filteredMessages.length > 0 ? (
-        <Card>
-            <CardHeader>
-              <CardTitle>SMS-historik ({filteredMessages.length})</CardTitle>
-              <CardDescription>Filtrera dina samtal och se status för varje meddelande</CardDescription>
+      {needsOnboarding ? (
+        <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/30">
+          <CardHeader>
+            <CardTitle>Aktivera din organisation för att komma igång</CardTitle>
+            <CardDescription>
+              Slutför onboarding-stegen så låses hela meddelandecentret upp.
+            </CardDescription>
           </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {filteredMessages.map((message) => {
-                  const isInbound = message.direction === 'inbound';
-                  const containerClasses = `flex items-start gap-4 p-4 rounded-lg transition-colors border ${
-                    isInbound
-                      ? 'bg-indigo-50/40 border-indigo-100 hover:bg-indigo-100/40'
-                      : 'bg-gray-50 border-gray-100 hover:bg-gray-100'
-                  }`;
-                  const statusBadge =
-                    message.status === 'delivered'
-                      ? 'bg-green-100 text-green-800'
-                      : message.status === 'sent'
-                      ? 'bg-blue-100 text-blue-800'
-                      : message.status === 'failed'
-                      ? 'bg-red-100 text-red-800'
-                      : message.status === 'received'
-                      ? 'bg-indigo-100 text-indigo-800'
-                      : 'bg-gray-100 text-gray-800';
-                  const statusLabel =
-                    message.status === 'delivered'
-                      ? '✅ Levererad'
-                      : message.status === 'sent'
-                      ? '📤 Skickad'
-                      : message.status === 'failed'
-                      ? '❌ Misslyckad'
-                      : message.status === 'received'
-                      ? '📥 Mottagen'
-                      : '⏳ Väntande';
-                  const directionBadge = isInbound
-                    ? 'bg-indigo-50 text-indigo-700'
-                    : 'bg-blue-50 text-blue-700';
-                  const directionLabel = isInbound ? 'Inkommande' : 'Utgående';
-                  const phoneLine = isInbound
-                    ? `Från ${displayPhoneNumber(message.from_phone || message.contacts?.phone || message.to_phone)}`
-                    : `Till ${displayPhoneNumber(message.to_phone)}`;
-
-                  return (
-                    <div key={message.id} className={containerClasses}>
-                      <div className="flex-shrink-0">
-                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold">
-                          {(message.contacts?.name || 'U').charAt(0).toUpperCase()}
-                        </div>
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1 gap-3">
-                          <h4 className="text-sm font-medium text-gray-900 truncate">
-                            {message.contacts?.name || 'Okänd kontakt'}
-                          </h4>
-                          <span className="text-xs text-gray-500">
-                            {new Date(message.created_at).toLocaleString('sv-SE')}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600 mb-1">{phoneLine}</p>
-                        <p className="text-sm text-gray-700 mb-2 line-clamp-3">{message.message}</p>
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className={`text-xs px-2 py-1 rounded-full ${statusBadge}`}>
-                            {statusLabel}
-                          </span>
-                          <span className={`text-xs px-2 py-1 rounded-full ${directionBadge}`}>
-                            {directionLabel}
-                          </span>
-                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                            {message.type === 'manual'
-                              ? '✍️ Manuell'
-                              : message.type === 'marketing'
-                              ? '📢 Marknadsföring'
-                              : message.type === 'reminder'
-                              ? '⏰ Påminnelse'
-                              : '✅ Bekräftelse'}
-                          </span>
-                          {message.cost && !isInbound && (
-                            <span className="text-xs text-gray-500">
-                              💰 {parseFloat(message.cost.toString()).toFixed(2)} SEK
-                            </span>
-                          )}
-                          {message.delivered_at && !isInbound && (
-                            <span className="text-xs text-gray-500">
-                              Levererad: {new Date(message.delivered_at).toLocaleTimeString('sv-SE')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </CardContent>
-        </Card>
-      ) : messages.length > 0 ? (
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center text-gray-500">
-              <Filter className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Inga meddelanden matchade filtren
-              </h3>
-              <p className="mb-6">Prova att ändra eller rensa dina filter</p>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSelectedStatus('all');
-                    setSelectedType('all');
-                    setSelectedDirection('all');
-                    setDateRange('all');
-                  }}
-                >
-                Rensa alla filter
-              </Button>
-            </div>
+          <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <p className="text-sm text-gray-600">
+              När du angett organisationens uppgifter får du tillgång till konversationer, mallar och automationer.
+            </p>
+            <Link href="/onboarding">
+              <Button>Fortsätt med onboarding</Button>
+            </Link>
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center text-gray-500">
-              <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Inga meddelanden ännu
-              </h3>
-              <p className="mb-6">Skicka ditt första SMS för att komma igång</p>
-              <Link href="/messages/send">
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Skicka SMS
-                </Button>
-              </Link>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Totalt skickade</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-blue-50">
+                    <MessageSquare className="h-6 w-6 text-blue-600" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Levererade</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.delivered}</p>
+                    <p className="text-xs text-green-600 mt-1">{deliveryRate}% leveransfrekvens</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-green-50">
+                    <CheckCircle className="h-6 w-6 text-green-600" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Misslyckade</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.failed}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-red-50">
+                    <XCircle className="h-6 w-6 text-red-600" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Total kostnad</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.totalCost.toFixed(2)} SEK</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-purple-50">
+                    <TrendingUp className="h-6 w-6 text-purple-600" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="mb-6">
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Sök meddelanden..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">Alla statusar</option>
+                  <option value="delivered">Levererad</option>
+                  <option value="sent">Skickad</option>
+                  <option value="pending">Väntande</option>
+                  <option value="failed">Misslyckad</option>
+                  <option value="received">Mottagen</option>
+                </select>
+
+                <select
+                  value={selectedType}
+                  onChange={(e) => setSelectedType(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">Alla typer</option>
+                  <option value="manual">Manuell</option>
+                  <option value="marketing">Marknadsföring</option>
+                  <option value="reminder">Påminnelse</option>
+                  <option value="confirmation">Bekräftelse</option>
+                </select>
+
+                <select
+                  value={selectedDirection}
+                  onChange={(e) =>
+                    setSelectedDirection(e.target.value as 'all' | 'outbound' | 'inbound')
+                  }
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">Alla riktningar</option>
+                  <option value="outbound">Utgående</option>
+                  <option value="inbound">Inkommande</option>
+                </select>
+
+                <select
+                  value={dateRange}
+                  onChange={(e) => setDateRange(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">All tid</option>
+                  <option value="today">Idag</option>
+                  <option value="week">Senaste veckan</option>
+                  <option value="month">Senaste månaden</option>
+                </select>
+              </div>
+
+              {(searchQuery ||
+                selectedStatus !== 'all' ||
+                selectedType !== 'all' ||
+                selectedDirection !== 'all' ||
+                dateRange !== 'all') && (
+                <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
+                  <Filter className="h-4 w-4" />
+                  <span>
+                    Visar {filteredMessages.length} av {messages.length} meddelanden
+                  </span>
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedStatus('all');
+                      setSelectedType('all');
+                      setSelectedDirection('all');
+                      setDateRange('all');
+                    }}
+                    className="text-blue-600 hover:text-blue-700 ml-2"
+                  >
+                    Rensa filter
+                  </button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {loading ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500">Laddar meddelanden...</p>
             </div>
-          </CardContent>
-        </Card>
+          ) : filteredMessages.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>SMS-historik ({filteredMessages.length})</CardTitle>
+                <CardDescription>
+                  Filtrera dina samtal och se status för varje meddelande
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {filteredMessages.map((message) => {
+                    const isInbound = message.direction === 'inbound';
+                    const containerClasses = `flex items-start gap-4 p-4 rounded-lg transition-colors border ${
+                      isInbound
+                        ? 'bg-indigo-50/40 border-indigo-100 hover:bg-indigo-100/40'
+                        : 'bg-gray-50 border-gray-100 hover:bg-gray-100'
+                    }`;
+                    const statusBadge =
+                      message.status === 'delivered'
+                        ? 'bg-green-100 text-green-800'
+                        : message.status === 'sent'
+                        ? 'bg-blue-100 text-blue-800'
+                        : message.status === 'failed'
+                        ? 'bg-red-100 text-red-800'
+                        : message.status === 'received'
+                        ? 'bg-indigo-100 text-indigo-800'
+                        : 'bg-gray-100 text-gray-800';
+                    const statusLabel =
+                      message.status === 'delivered'
+                        ? '✅ Levererad'
+                        : message.status === 'sent'
+                        ? '📤 Skickad'
+                        : message.status === 'failed'
+                        ? '❌ Misslyckad'
+                        : message.status === 'received'
+                        ? '📥 Mottagen'
+                        : '⏳ Väntande';
+                    const directionBadge = isInbound
+                      ? 'bg-indigo-50 text-indigo-700'
+                      : 'bg-blue-50 text-blue-700';
+                    const directionLabel = isInbound ? 'Inkommande' : 'Utgående';
+                    const phoneLine = isInbound
+                      ? `Från ${displayPhoneNumber(
+                          message.from_phone || message.contacts?.phone || message.to_phone,
+                        )}`
+                      : `Till ${displayPhoneNumber(message.to_phone)}`;
+
+                    return (
+                      <div key={message.id} className={containerClasses}>
+                        <div className="flex-shrink-0">
+                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold">
+                            {(message.contacts?.name || 'U').charAt(0).toUpperCase()}
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1 gap-3">
+                            <h4 className="text-sm font-medium text-gray-900 truncate">
+                              {message.contacts?.name || 'Okänd kontakt'}
+                            </h4>
+                            <span className="text-xs text-gray-500">
+                              {new Date(message.created_at).toLocaleString('sv-SE')}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-1">{phoneLine}</p>
+                          <p className="text-sm text-gray-700 mb-2 line-clamp-3">{message.message}</p>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className={`text-xs px-2 py-1 rounded-full ${statusBadge}`}>
+                              {statusLabel}
+                            </span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${directionBadge}`}>
+                              {directionLabel}
+                            </span>
+                            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                              {message.type === 'manual'
+                                ? '✍️ Manuell'
+                                : message.type === 'marketing'
+                                ? '📢 Marknadsföring'
+                                : message.type === 'reminder'
+                                ? '⏰ Påminnelse'
+                                : '✅ Bekräftelse'}
+                            </span>
+                            {message.cost && !isInbound && (
+                              <span className="text-xs text-gray-500">
+                                💰 {parseFloat(message.cost.toString()).toFixed(2)} SEK
+                              </span>
+                            )}
+                            {message.delivered_at && !isInbound && (
+                              <span className="text-xs text-gray-500">
+                                Levererad: {new Date(message.delivered_at).toLocaleTimeString('sv-SE')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          ) : messages.length > 0 ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center text-gray-500">
+                  <Filter className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    Inga meddelanden matchade filtren
+                  </h3>
+                  <p className="mb-6">Prova att ändra eller rensa dina filter</p>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedStatus('all');
+                      setSelectedType('all');
+                      setSelectedDirection('all');
+                      setDateRange('all');
+                    }}
+                  >
+                    Rensa alla filter
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center text-gray-500">
+                  <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    Inga meddelanden ännu
+                  </h3>
+                  <p className="mb-6">Skicka ditt första SMS för att komma igång</p>
+                  <Link href="/messages/send">
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Skicka SMS
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );

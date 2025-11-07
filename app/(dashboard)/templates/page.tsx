@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Edit, Trash2, Copy, MessageSquare, X, Sparkles, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react';
@@ -41,6 +42,7 @@ export default function TemplatesPage() {
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -87,14 +89,18 @@ export default function TemplatesPage() {
         .eq('id', session.user.id)
         .single();
 
-      const user = (userData as UserWithOrg | null);
+        const user = userData as UserWithOrg | null;
 
-      if (!user?.organization_id) {
-        router.push('/onboarding');
-        return;
-      }
+        if (!user?.organization_id) {
+          setNeedsOnboarding(true);
+          setTemplates([]);
+          setOrganizationIndustry(null);
+          setLoading(false);
+          return;
+        }
 
-      setOrganizationIndustry(user.organizations?.industry ?? null);
+        setNeedsOnboarding(false);
+        setOrganizationIndustry(user.organizations?.industry ?? null);
 
       // Get both global templates and organization templates
       const { data, error } = await supabase
@@ -299,17 +305,39 @@ export default function TemplatesPage() {
             Skapa och hantera återanvändbara SMS-mallar
           </p>
         </div>
-        <Button onClick={() => {
-          setEditingTemplate(null);
-          setFormData({ name: '', message: '', category: 'reminder' });
-          setShowModal(true);
-        }}>
+        <Button
+          onClick={() => {
+            setEditingTemplate(null);
+            setFormData({ name: '', message: '', category: 'reminder' });
+            setShowModal(true);
+          }}
+          disabled={needsOnboarding}
+        >
           <Plus className="h-4 w-4 mr-2" />
           Ny mall
         </Button>
       </div>
 
-        {recommendedPlaybooks.length > 0 && (
+      {needsOnboarding ? (
+        <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/30">
+          <CardHeader>
+            <CardTitle>Slutför onboarding för att använda mallar</CardTitle>
+            <CardDescription>
+              När organisationen är registrerad kan du skapa egna mallar och aktivera playbooks.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <p className="text-sm text-gray-600">
+              Påbörja onboarding-flödet för att koppla din verksamhet och låsa upp hela mallbiblioteket.
+            </p>
+            <Link href="/onboarding">
+              <Button>Gå till onboarding</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+      {recommendedPlaybooks.length > 0 && (
           <Card className="mb-8 border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/40">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -506,6 +534,8 @@ export default function TemplatesPage() {
             </div>
           </CardContent>
         </Card>
+        )}
+        </>
       )}
 
       {/* Create/Edit Modal */}
