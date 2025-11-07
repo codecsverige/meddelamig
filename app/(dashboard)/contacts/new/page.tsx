@@ -19,6 +19,8 @@ export default function NewContactPage() {
     name: '',
     phone: '',
     email: '',
+    birthday: '',
+    notes: '',
     tags: '',
     smsConsent: true,
     marketingConsent: false,
@@ -64,6 +66,8 @@ export default function NewContactPage() {
         name: formData.name,
         phone: formattedPhone,
         email: formData.email || null,
+        birthday: formData.birthday || null,
+        notes: formData.notes || null,
         tags: formData.tags ? formData.tags.split(',').map(t => t.trim()) : [],
         sms_consent: formData.smsConsent,
         marketing_consent: formData.marketingConsent,
@@ -169,6 +173,41 @@ export default function NewContactPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="anna@exempel.se"
               />
+            </div>
+
+            <div>
+              <label htmlFor="birthday" className="block text-sm font-medium text-gray-700 mb-2">
+                🎂 Födelsedag (valfritt)
+              </label>
+              <input
+                id="birthday"
+                name="birthday"
+                type="date"
+                value={formData.birthday}
+                onChange={handleChange}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Vi skickar automatisk gratishälsning med specialerbjudande
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-2">
+                Anteckningar (valfritt)
+              </label>
+              <textarea
+                id="notes"
+                name="notes"
+                value={formData.notes}
+                onChange={handleChange}
+                rows={3}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Allergier: nötter. Föredrar fönsterbord."
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Särskilda önskemål, allergier, preferenser
+              </p>
             </div>
 
             <div>

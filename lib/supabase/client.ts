@@ -7,4 +7,4 @@ const hasClientEnv =
   Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export const createClient = () =>
-  hasClientEnv ? createClientComponentClient<Database>() : createSupabaseStub();
+  hasClientEnv ? createClientComponentClient<Database>() : createSupabaseStub('public');

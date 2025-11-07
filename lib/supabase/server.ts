@@ -2,6 +2,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import type { Database } from './types';
 import { createSupabaseStub } from './stub';
+import { logSupabaseConfigWarning } from './config';
 
 const hasServerEnv =
   Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
@@ -9,7 +10,8 @@ const hasServerEnv =
 
 export const createServerClient = () => {
   if (!hasServerEnv) {
-    return createSupabaseStub();
+    logSupabaseConfigWarning('public');
+    return createSupabaseStub('public');
   }
 
   const cookieStore = cookies();

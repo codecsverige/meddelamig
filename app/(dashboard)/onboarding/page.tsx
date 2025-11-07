@@ -45,7 +45,14 @@ export default function OnboardingPage() {
   const supabase = createClient();
   const { showToast } = useToast();
 
-  const [step, setStep] = useState(1);
+  const STEP_FLOW = [
+    { id: 0, title: 'Kom igång', subtitle: 'Testa MEDDELA i 14 dagar helt gratis' },
+    { id: 1, title: 'Din organisation', subtitle: 'Berätta vem vi hjälper' },
+    { id: 2, title: 'Bransch', subtitle: 'Skräddarsy upplevelsen efter din verksamhet' },
+    { id: 3, title: 'Abonnemang', subtitle: 'Välj den plan som passar dig – kan ändras när som helst' },
+  ] as const;
+
+  const [step, setStep] = useState<number>(STEP_FLOW[0].id);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -92,7 +99,7 @@ export default function OnboardingPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (step < 3) {
+    if (step < STEP_FLOW[STEP_FLOW.length - 1].id) {
       setStep(step + 1);
       return;
     }
@@ -164,55 +171,98 @@ export default function OnboardingPage() {
         {/* Progress Bar */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
-            {[1, 2, 3].map((s) => (
-              <div
-                key={s}
-                className={`flex items-center ${s < 3 ? 'flex-1' : ''}`}
-              >
+            {STEP_FLOW.map((flowStep, index) => {
+              const isActive = step === flowStep.id;
+              const isCompleted = step > flowStep.id;
+              const isLast = index === STEP_FLOW.length - 1;
+
+              return (
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-                    step >= s
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-600'
-                  }`}
+                  key={flowStep.id}
+                  className={`flex items-center ${!isLast ? 'flex-1' : ''}`}
                 >
-                  {step > s ? <CheckCircle2 className="w-6 h-6" /> : s}
-                </div>
-                {s < 3 && (
                   <div
-                    className={`flex-1 h-1 mx-2 ${
-                      step > s ? 'bg-blue-600' : 'bg-gray-200'
+                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
+                      isCompleted || isActive
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-600'
                     }`}
-                  />
-                )}
-              </div>
-            ))}
+                  >
+                    {isCompleted ? <CheckCircle2 className="w-6 h-6" /> : index + 1}
+                  </div>
+                  {!isLast && (
+                    <div
+                      className={`flex-1 h-1 mx-2 ${
+                        step > flowStep.id ? 'bg-blue-600' : 'bg-gray-200'
+                      }`}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
           <div className="flex justify-between text-sm text-gray-600">
-            <span>Organisation</span>
-            <span>Bransch</span>
-            <span>Abonnemang</span>
+            {STEP_FLOW.map((flowStep) => (
+              <span
+                key={flowStep.id}
+                className={step === flowStep.id ? 'font-semibold text-blue-600' : ''}
+              >
+                {flowStep.id === 0 ? 'Introduktion' : STEP_FLOW.find((f) => f.id === flowStep.id)?.title}
+              </span>
+            ))}
           </div>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">
-              {step === 1 && 'Välkommen till Meddela!'}
-              {step === 2 && 'Välj din bransch'}
-              {step === 3 && 'Välj ditt abonnemang'}
+              {STEP_FLOW.find((flowStep) => flowStep.id === step)?.title ?? 'Välkommen till Meddela!'}
             </CardTitle>
             <CardDescription>
-              {step === 1 && 'Låt oss komma igång med ditt konto'}
-              {step === 2 && 'Vi anpassar upplevelsen efter din verksamhet'}
-              {step === 3 && 'Du kan alltid ändra senare'}
+              {STEP_FLOW.find((flowStep) => flowStep.id === step)?.subtitle ??
+                'Låt oss komma igång med ditt konto'}
             </CardDescription>
           </CardHeader>
 
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
+            {step === 0 ? (
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <p className="text-gray-600">
+                    Du får full tillgång till alla funktioner i 14 dagar – utan att ange kortuppgifter.
+                    Testa hur MEDDELA kan minska no-shows, öka återbesök och göra din SMS-kommunikation enkel.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-white rounded-lg border border-blue-100">
+                      <h4 className="font-semibold text-blue-700 mb-2">Vad ingår?</h4>
+                      <ul className="space-y-2 text-sm text-gray-600">
+                        <li>• 350 SMS-krediter att testa fritt</li>
+                        <li>• Färdiga mallar för populära kampanjer</li>
+                        <li>• Segmentering på VIP/inaktiva/nyligen besökta</li>
+                      </ul>
+                    </div>
+                    <div className="p-4 bg-white rounded-lg border border-blue-100">
+                      <h4 className="font-semibold text-blue-700 mb-2">Dina nästa steg</h4>
+                      <ul className="space-y-2 text-sm text-gray-600">
+                        <li>1. Registrera din organisation</li>
+                        <li>2. Berätta vilken bransch du tillhör</li>
+                        <li>3. Välj planen som passar – du kan ändra när som helst</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  className="w-full md:w-auto"
+                  size="lg"
+                  onClick={() => setStep(1)}
+                >
+                  Börja konfigurera
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-6">
               {/* Step 1: Organization Info */}
-              {step === 1 && (
+                {step === 1 && (
                 <div className="space-y-4">
                   <div>
                     <label htmlFor="organizationName" className="block text-sm font-medium text-gray-700 mb-2">
@@ -283,7 +333,7 @@ export default function OnboardingPage() {
               )}
 
               {/* Step 2: Industry */}
-              {step === 2 && (
+                {step === 2 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {INDUSTRIES.map((industry) => (
                     <label
@@ -318,7 +368,7 @@ export default function OnboardingPage() {
               )}
 
               {/* Step 3: Plan */}
-              {step === 3 && (
+                {step === 3 && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {PLANS.map((plan) => (
                     <label
@@ -378,7 +428,7 @@ export default function OnboardingPage() {
 
               {/* Navigation Buttons */}
               <div className="flex gap-4 pt-6 border-t border-gray-200">
-                {step > 1 && (
+                  {step > 1 && (
                   <Button
                     type="button"
                     variant="outline"
@@ -407,6 +457,7 @@ export default function OnboardingPage() {
                 </Button>
               </div>
             </form>
+            )}
           </CardContent>
         </Card>
 

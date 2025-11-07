@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +19,8 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
 import { calculateSMSCost, calculateSMSSegments } from "@/lib/utils/sms";
 import { useToast } from "@/components/ui/toast";

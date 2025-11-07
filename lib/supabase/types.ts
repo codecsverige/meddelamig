@@ -9,6 +9,36 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+        contact_notes: {
+          Row: {
+            id: string
+            organization_id: string
+            contact_id: string
+            author_id: string | null
+            note_type: 'note' | 'task' | 'alert'
+            body: string
+            created_at: string
+          }
+          Insert: {
+            id?: string
+            organization_id: string
+            contact_id: string
+            author_id?: string | null
+            note_type?: 'note' | 'task' | 'alert'
+            body: string
+            created_at?: string
+          }
+          Update: {
+            id?: string
+            organization_id?: string
+            contact_id?: string
+            author_id?: string | null
+            note_type?: 'note' | 'task' | 'alert'
+            body?: string
+            created_at?: string
+          }
+          Relationships: []
+        }
       organizations: {
         Row: {
           id: string
@@ -171,66 +201,72 @@ export interface Database {
         }
         Relationships: []
       }
-      sms_messages: {
-        Row: {
-          id: string
-          organization_id: string
-          contact_id: string | null
-          user_id: string | null
-          to_phone: string
-          message: string
-          sender_name: string
-          type: 'reminder' | 'confirmation' | 'marketing' | 'manual'
-          template_id: string | null
-          status: 'pending' | 'sent' | 'delivered' | 'failed'
-          sent_at: string | null
-          delivered_at: string | null
-          external_id: string | null
-          cost: number | null
-          error_message: string | null
-          scheduled_for: string | null
-          created_at: string
+        sms_messages: {
+          Row: {
+            id: string
+            organization_id: string
+            contact_id: string | null
+            user_id: string | null
+            to_phone: string
+            from_phone: string | null
+            message: string
+            sender_name: string
+            type: 'reminder' | 'confirmation' | 'marketing' | 'manual'
+            direction: 'outbound' | 'inbound'
+            template_id: string | null
+            status: 'pending' | 'sent' | 'delivered' | 'failed' | 'received'
+            sent_at: string | null
+            delivered_at: string | null
+            external_id: string | null
+            cost: number | null
+            error_message: string | null
+            scheduled_for: string | null
+            created_at: string
+          }
+          Insert: {
+            id?: string
+            organization_id: string
+            contact_id?: string | null
+            user_id?: string | null
+            to_phone: string
+            from_phone?: string | null
+            message: string
+            sender_name?: string
+            type: 'reminder' | 'confirmation' | 'marketing' | 'manual'
+            direction?: 'outbound' | 'inbound'
+            template_id?: string | null
+            status?: 'pending' | 'sent' | 'delivered' | 'failed' | 'received'
+            sent_at?: string | null
+            delivered_at?: string | null
+            external_id?: string | null
+            cost?: number | null
+            error_message?: string | null
+            scheduled_for?: string | null
+            created_at?: string
+          }
+          Update: {
+            id?: string
+            organization_id?: string
+            contact_id?: string | null
+            user_id?: string | null
+            to_phone?: string
+            from_phone?: string | null
+            message?: string
+            sender_name?: string
+            type?: 'reminder' | 'confirmation' | 'marketing' | 'manual'
+            direction?: 'outbound' | 'inbound'
+            template_id?: string | null
+            status?: 'pending' | 'sent' | 'delivered' | 'failed' | 'received'
+            sent_at?: string | null
+            delivered_at?: string | null
+            external_id?: string | null
+            cost?: number | null
+            error_message?: string | null
+            scheduled_for?: string | null
+            created_at?: string
+          }
+          Relationships: []
         }
-        Insert: {
-          id?: string
-          organization_id: string
-          contact_id?: string | null
-          user_id?: string | null
-          to_phone: string
-          message: string
-          sender_name?: string
-          type: 'reminder' | 'confirmation' | 'marketing' | 'manual'
-          template_id?: string | null
-          status?: 'pending' | 'sent' | 'delivered' | 'failed'
-          sent_at?: string | null
-          delivered_at?: string | null
-          external_id?: string | null
-          cost?: number | null
-          error_message?: string | null
-          scheduled_for?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          organization_id?: string
-          contact_id?: string | null
-          user_id?: string | null
-          to_phone?: string
-          message?: string
-          sender_name?: string
-          type?: 'reminder' | 'confirmation' | 'marketing' | 'manual'
-          template_id?: string | null
-          status?: 'pending' | 'sent' | 'delivered' | 'failed'
-          sent_at?: string | null
-          delivered_at?: string | null
-          external_id?: string | null
-          cost?: number | null
-          error_message?: string | null
-          scheduled_for?: string | null
-          created_at?: string
-        }
-        Relationships: []
-      }
       sms_templates: {
         Row: {
           id: string

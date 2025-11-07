@@ -1,6 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { createSupabaseStub } from './stub';
+import {
+  getMissingSupabaseEnvVars,
+  logSupabaseConfigWarning,
+} from './config';
 
 type AdminClient = ReturnType<typeof createClient<Database>>;
 
@@ -9,12 +13,15 @@ let adminClient: AdminClient | null = null;
 export const createAdminClient = (): AdminClient => {
   if (adminClient) return adminClient;
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const missing = getMissingSupabaseEnvVars('service');
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    return createSupabaseStub();
+  if (missing.length > 0) {
+    logSupabaseConfigWarning('service', missing);
+    return createSupabaseStub('service');
   }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
   adminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
     auth: {
