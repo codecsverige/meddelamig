@@ -1,26 +1,24 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { 
-  MessageSquare, 
-  Users, 
-  Send, 
-  TrendingUp, 
-  Sparkles, 
+import { Button } from '@/components/ui/button';
+import {
+  MessageSquare,
+  Users,
+  Send,
+  TrendingUp,
+  Sparkles,
   ArrowRight,
   DollarSign,
   Clock,
   Target,
   Calendar,
   BarChart3,
-  Activity
 } from 'lucide-react';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
 import { StatCard } from '@/components/dashboard/stat-card';
 import { ActivityTimeline } from '@/components/dashboard/activity-timeline';
-import { InsightsCard } from '@/components/dashboard/insights-card';
 import { PerformanceChart } from '@/components/dashboard/performance-chart';
 import { CostTracker } from '@/components/dashboard/cost-tracker';
 
@@ -121,6 +119,7 @@ export default async function DashboardPage() {
   const monthCost = monthSMSCount * costPerSMS;
   const weekCost = weekSMSCount * costPerSMS;
   const costTrend = weekSMSCount > 0 ? ((monthCost - weekCost) / weekCost * 100).toFixed(1) : 0;
+  const avgSmsPerContact = totalContacts > 0 ? (monthSMSCount / totalContacts).toFixed(1) : '0';
 
   // Generate chart data for last 7 days
   const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -345,6 +344,52 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Din status</CardTitle>
+          <CardDescription>Nyckeltal baserat på den senaste aktiviteten.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <p className="text-sm text-gray-500 mb-1 flex items-center gap-2">
+                <Users className="h-4 w-4 text-blue-600" />
+                Kontakter totalt
+              </p>
+              <p className="text-2xl font-semibold text-gray-900">{totalContacts.toLocaleString('sv-SE')}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 mb-1 flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-green-600" />
+                SMS denna månad
+              </p>
+              <p className="text-2xl font-semibold text-gray-900">{monthSMSCount.toLocaleString('sv-SE')}</p>
+              <p className="text-xs text-gray-500 mt-1">≈ {monthCost.toFixed(0)} kr</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 mb-1 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-purple-600" />
+                Leveransgrad
+              </p>
+              <p className="text-2xl font-semibold text-gray-900">
+                {deliveryRate > 0 ? `${deliveryRate}%` : '–'}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                {totalSMS > 0 ? `${totalSMS} SMS skickade totalt` : 'Inga utskick ännu'}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 mb-1 flex items-center gap-2">
+                <Send className="h-4 w-4 text-orange-600" />
+                SMS per kontakt
+              </p>
+              <p className="text-2xl font-semibold text-gray-900">{avgSmsPerContact}</p>
+              <p className="text-xs text-gray-500 mt-1">Genomsnitt denna månad</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Quick Actions */}
       <Card className="border-2 border-dashed border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50">
         <CardHeader>
@@ -396,7 +441,7 @@ export default async function DashboardPage() {
               <div className="p-4 bg-white rounded-xl hover:shadow-lg transition-all hover:scale-105 border-2 border-transparent hover:border-orange-500">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="p-2 bg-orange-100 rounded-lg group-hover:bg-orange-600 transition-colors">
-                    <Activity className="h-5 w-5 text-orange-600 group-hover:text-white" />
+                    <Calendar className="h-5 w-5 text-orange-600 group-hover:text-white" />
                   </div>
                   <h4 className="font-semibold text-gray-900 group-hover:text-orange-600">Importera</h4>
                 </div>
@@ -408,7 +453,36 @@ export default async function DashboardPage() {
       </Card>
 
       {/* Smart Insights */}
-      {insights.length > 0 && <InsightsCard insights={insights} />}
+      {insights.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Rekommenderade nästa steg</CardTitle>
+            <CardDescription>Fokusera på det som ger mest effekt just nu.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {insights.map((insight) => (
+              <div
+                key={insight.id}
+                className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 rounded-lg bg-gray-50"
+              >
+                <div>
+                  <h4 className="font-semibold text-gray-900">{insight.title}</h4>
+                  <p className="text-sm text-gray-600 mt-1">{insight.description}</p>
+                </div>
+                {insight.action && (
+                  <Link
+                    href={insight.action.href}
+                    className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    {insight.action.label}
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -437,71 +511,85 @@ export default async function DashboardPage() {
         />
       </div>
 
-      {/* Campaign Overview */}
-      {campaigns && campaigns.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Aktiva kampanjer</CardTitle>
-                <CardDescription>Dina senaste SMS-kampanjer</CardDescription>
-              </div>
-              <Link
-                href="/campaigns"
-                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-              >
-                Visa alla →
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {campaigns.map((campaign: any) => (
-                <div
-                  key={campaign.id}
-                  className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-md transition-all"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-semibold text-gray-900 truncate">
-                      {campaign.name}
-                    </h4>
-                    <Badge
-                      variant={
-                        campaign.status === 'completed'
-                          ? 'success'
-                          : campaign.status === 'sending'
-                          ? 'info'
-                          : 'outline'
-                      }
-                    >
-                      {campaign.status}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                    {campaign.message}
-                  </p>
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>
-                      {campaign.sent_count}/{campaign.total_recipients} skickat
-                    </span>
-                    <span>{campaign.delivered_count} levererat</span>
-                  </div>
-                  <div className="mt-2 h-1 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-600 rounded-full transition-all"
-                      style={{
-                        width: `${
-                          (campaign.sent_count / campaign.total_recipients) * 100
-                        }%`,
-                      }}
-                    />
-                  </div>
+        {/* Campaign Overview */}
+        {campaigns && campaigns.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Aktiva kampanjer</CardTitle>
+                  <CardDescription>Dina senaste SMS-kampanjer</CardDescription>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                <Link
+                  href="/campaigns"
+                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Visa alla →
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {campaigns.map((campaign: any) => (
+                  <div
+                    key={campaign.id}
+                    className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-md transition-all"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-gray-900 truncate">
+                        {campaign.name}
+                      </h4>
+                      <Badge
+                        variant={
+                          campaign.status === 'completed'
+                            ? 'success'
+                            : campaign.status === 'sending'
+                            ? 'info'
+                            : 'outline'
+                        }
+                      >
+                        {campaign.status}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                      {campaign.message}
+                    </p>
+                    <div className="flex items-center justify-between text-xs text-gray-500">
+                      <span>
+                        {campaign.sent_count}/{campaign.total_recipients} skickat
+                      </span>
+                      <span>{campaign.delivered_count} levererat</span>
+                    </div>
+                    <div className="mt-2 h-1 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 rounded-full transition-all"
+                        style={{
+                          width: `${
+                            (campaign.sent_count / campaign.total_recipients) * 100
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Kampanjer</CardTitle>
+              <CardDescription>Skapa riktade utskick för att engagera dina kunder.</CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm text-gray-600">
+              <p>Du har inte skickat några kampanjer ännu.</p>
+              <Link href="/campaigns" className="mt-3 inline-flex items-center gap-1 text-blue-600 hover:text-blue-700">
+                Skapa din första kampanj
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </CardContent>
+          </Card>
+        )}
 
       {/* Bottom Row: Activity Timeline & Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -611,7 +699,7 @@ export default async function DashboardPage() {
 
         <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg">
           <div className="flex items-center gap-2 mb-1">
-            <Activity className="h-4 w-4 text-purple-600" />
+            <TrendingUp className="h-4 w-4 text-purple-600" />
             <span className="text-xs font-medium text-purple-700">Denna månad</span>
           </div>
           <p className="text-2xl font-bold text-purple-900">{monthSMSCount}</p>
