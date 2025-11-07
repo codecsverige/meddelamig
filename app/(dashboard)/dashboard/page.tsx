@@ -21,6 +21,7 @@ import { StatCard } from '@/components/dashboard/stat-card';
 import { ActivityTimeline } from '@/components/dashboard/activity-timeline';
 import { PerformanceChart } from '@/components/dashboard/performance-chart';
 import { CostTracker } from '@/components/dashboard/cost-tracker';
+import { GuidedSetupWizard } from '@/components/dashboard/guided-setup-wizard';
 
 export default async function DashboardPage() {
   const supabase = createServerClient();
@@ -389,6 +390,8 @@ export default async function DashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      <GuidedSetupWizard isNewUser={isNewUser} />
 
       {/* Quick Actions */}
       <Card className="border-2 border-dashed border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50">
