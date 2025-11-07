@@ -59,6 +59,7 @@ export const createSupabaseStub = (scope: SupabaseEnvScope = 'public') => {
     auth: {
       getSession: async () => ({ data: { session: null }, error }),
       signUp: async () => ({ data: { user: null }, error }),
+      signInWithPassword: async () => ({ data: { session: null, user: null }, error }),
       signInWithOAuth: async () => ({ data: null, error }),
       signOut: async () => ({ error }),
       admin: {
