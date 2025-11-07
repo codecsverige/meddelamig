@@ -1,13 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Edit, Trash2, Copy, MessageSquare, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Copy, MessageSquare, X, Sparkles, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { Badge } from '@/components/ui/badge';
+import {
+  getPlaybooksForIndustry,
+  industryOptions,
+  type IndustryKey,
+  type PlaybookDefinition,
+} from '@/lib/setup/playbooks';
 
 type Template = {
   id: string;
@@ -38,6 +44,18 @@ export default function TemplatesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [organizationIndustry, setOrganizationIndustry] = useState<IndustryKey | null>(null);
+  const [applyingPlaybookId, setApplyingPlaybookId] = useState<string | null>(null);
+
+  const recommendedPlaybooks = useMemo<PlaybookDefinition[]>(() => {
+    if (!organizationIndustry) return [];
+    return getPlaybooksForIndustry(organizationIndustry);
+  }, [organizationIndustry]);
+
+  const industryLabel = useMemo(() => {
+    if (!organizationIndustry) return null;
+    return industryOptions.find((option) => option.value === organizationIndustry)?.label ?? null;
+  }, [organizationIndustry]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -51,22 +69,32 @@ export default function TemplatesPage() {
 
   const loadTemplates = async () => {
     try {
+      setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.push('/login');
         return;
       }
 
-      const { data: user } = await supabase
+      type UserWithOrg = {
+        organization_id: string | null;
+        organizations: { industry: IndustryKey | null } | null;
+      };
+
+      const { data: userData } = await supabase
         .from('users')
-        .select('organization_id')
+        .select('organization_id, organizations(industry)')
         .eq('id', session.user.id)
         .single();
+
+      const user = (userData as UserWithOrg | null);
 
       if (!user?.organization_id) {
         router.push('/onboarding');
         return;
       }
+
+      setOrganizationIndustry(user.organizations?.industry ?? null);
 
       // Get both global templates and organization templates
       const { data, error } = await supabase
@@ -82,6 +110,34 @@ export default function TemplatesPage() {
       showToast(error.message || 'Kunde inte ladda mallar', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const applyPlaybook = async (playbookId: string) => {
+    try {
+      setApplyingPlaybookId(playbookId);
+      const response = await fetch('/api/setup/playbooks/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playbookId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? 'Kunde inte aktivera playbook.');
+      }
+
+      showToast(
+        `Playbook "${data.playbook?.title ?? 'Okänd'}" aktiverad – ${data.templatesInserted ?? 0} mallar redo.`,
+        'success',
+      );
+
+      await loadTemplates();
+    } catch (error: any) {
+      showToast(error.message || 'Något gick fel när playbook aktiverades', 'error');
+    } finally {
+      setApplyingPlaybookId(null);
     }
   };
 
@@ -253,7 +309,92 @@ export default function TemplatesPage() {
         </Button>
       </div>
 
-      {/* Category Filter */}
+        {recommendedPlaybooks.length > 0 && (
+          <Card className="mb-8 border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-blue-600" />
+                Playbooks{industryLabel ? ` för ${industryLabel}` : ''}
+              </CardTitle>
+              <CardDescription>
+                Startklara sekvenser med mallar, kampanjer och automations-förslag anpassade efter din verksamhet.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {recommendedPlaybooks.map((playbook) => {
+                  const extraTemplatesCount = playbook.extraTemplates?.length ?? 0;
+                  const extraCampaignsCount = playbook.extraCampaigns?.length ?? 0;
+                  const isApplying = applyingPlaybookId === playbook.id;
+
+                  return (
+                    <div
+                      key={playbook.id}
+                      className="flex flex-col justify-between h-full border border-blue-100 bg-white rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">{playbook.title}</h3>
+                            <p className="text-sm text-gray-600 mt-1">{playbook.headline}</p>
+                          </div>
+                          <span className="text-xs font-semibold uppercase text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+                            {playbook.goal === 'increase_bookings'
+                              ? 'Fyll tider'
+                              : playbook.goal === 'reactivate_customers'
+                              ? 'Återaktivera'
+                              : 'Event & demo'}
+                          </span>
+                        </div>
+
+                        <ul className="mt-4 space-y-2">
+                          {playbook.outcomes.map((outcome) => (
+                            <li key={outcome} className="flex items-start gap-2 text-sm text-gray-700">
+                              <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
+                              <span>{outcome}</span>
+                            </li>
+                          ))}
+                        </ul>
+
+                        {(extraTemplatesCount > 0 || extraCampaignsCount > 0) && (
+                          <div className="mt-4 text-xs text-gray-500 flex items-center gap-3">
+                            {extraTemplatesCount > 0 && <span>+{extraTemplatesCount} extra mallar</span>}
+                            <span>+{extraCampaignsCount + 1} kampanjer totalt</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-6 flex items-center justify-between">
+                        <div className="text-xs text-gray-500">
+                          Aktiverar även förinställda automationsförslag.
+                        </div>
+                        <Button
+                          onClick={() => applyPlaybook(playbook.id)}
+                          disabled={isApplying}
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          {isApplying ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Aktiverar...
+                            </>
+                          ) : (
+                            <>
+                              Aktivera playbook
+                              <ArrowRight className="h-4 w-4 ml-2" />
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Category Filter */}
       <div className="flex flex-wrap gap-2 mb-6">
         <Button
           variant={selectedCategory === 'all' ? 'default' : 'outline'}

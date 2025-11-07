@@ -6,12 +6,16 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
-  Calendar, Gift, Star, Clock, Send, 
-  CheckCircle2, XCircle, Loader2, Heart,
+  Calendar, Gift, Send, Loader2,
   Sparkles, Zap, TrendingUp
 } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/components/ui/toast';
+import {
+  defaultAutomationSettings,
+  normalizeAutomationSettings,
+  type AutomationSettings,
+} from '@/lib/automation/presets';
 
 type Contact = {
   id: string;
@@ -20,6 +24,25 @@ type Contact = {
   email?: string;
   birthday?: string;
   marketing_consent: boolean;
+};
+
+type TemplateCategory = 'reminder' | 'confirmation' | 'marketing' | 'thank_you';
+
+type TemplateOption = {
+  id: string;
+  name: string;
+  category: TemplateCategory;
+  message: string;
+  is_global: boolean;
+};
+
+type TemplateRow = {
+  id: string;
+  name: string;
+  category: TemplateCategory;
+  message: string;
+  is_global: boolean | null;
+  organization_id: string | null;
 };
 
 export default function AutomationPage() {
@@ -35,6 +58,12 @@ export default function AutomationPage() {
     daysBeforeBirthday: 0, // 0 = same day, 1 = day before
     autoSendBirthdays: false,
   });
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [organizationSettings, setOrganizationSettings] = useState<Record<string, unknown> | null>(null);
+  const [templateOptions, setTemplateOptions] = useState<TemplateOption[]>([]);
+  const [automationSettings, setAutomationSettings] = useState<AutomationSettings>(defaultAutomationSettings);
+  const [automationDirty, setAutomationDirty] = useState(false);
+  const [savingAutomations, setSavingAutomations] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -42,58 +71,214 @@ export default function AutomationPage() {
 
   const loadData = async () => {
     try {
+      setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.push('/login');
         return;
       }
 
-      const { data: user } = await supabase
+      const { data: user, error: userError } = await supabase
         .from('users')
         .select('organization_id')
         .eq('id', session.user.id)
         .single();
+
+      if (userError) {
+        throw userError;
+      }
 
       if (!user?.organization_id) {
         router.push('/onboarding');
         return;
       }
 
-      // Get upcoming birthdays (next 7 days)
-      const { data: contacts } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('organization_id', user.organization_id)
-        .eq('marketing_consent', true)
-        .not('birthday', 'is', null)
-        .is('deleted_at', null);
+      setOrganizationId(user.organization_id);
 
-      if (contacts) {
-        // Filter birthdays in next 7 days (client-side for now)
-        const today = new Date();
-        const next7Days = new Date();
-        next7Days.setDate(today.getDate() + 7);
+      const [contactsRes, templatesRes, organizationRes] = await Promise.all([
+        supabase
+          .from('contacts')
+          .select('*')
+          .eq('organization_id', user.organization_id)
+          .eq('marketing_consent', true)
+          .not('birthday', 'is', null)
+          .is('deleted_at', null),
+        supabase
+          .from('sms_templates')
+          .select('id, name, category, message, is_global, organization_id')
+          .or(`organization_id.eq.${user.organization_id},is_global.eq.true`)
+          .order('is_global', { ascending: false })
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('organizations')
+          .select('settings')
+          .eq('id', user.organization_id)
+          .single(),
+      ]);
 
-        const upcoming = contacts.filter((c: any) => {
-          if (!c.birthday) return false;
-          
-          const birthday = new Date(c.birthday);
-          const thisYearBirthday = new Date(
-            today.getFullYear(),
-            birthday.getMonth(),
-            birthday.getDate()
-          );
-
-          // Check if birthday is within next 7 days
-          return thisYearBirthday >= today && thisYearBirthday <= next7Days;
-        });
-
-        setUpcomingBirthdays(upcoming);
+      if (contactsRes.error) {
+        throw contactsRes.error;
       }
+
+      if (templatesRes.error) {
+        throw templatesRes.error;
+      }
+
+      if (organizationRes.error) {
+        throw organizationRes.error;
+      }
+
+      const today = new Date();
+      const next7Days = new Date();
+      next7Days.setDate(today.getDate() + 7);
+
+      const contacts = contactsRes.data ?? [];
+      const upcoming = contacts.filter((c: any) => {
+        if (!c.birthday) return false;
+
+        const birthday = new Date(c.birthday);
+        const thisYearBirthday = new Date(
+          today.getFullYear(),
+          birthday.getMonth(),
+          birthday.getDate(),
+        );
+
+        return thisYearBirthday >= today && thisYearBirthday <= next7Days;
+      });
+
+      setUpcomingBirthdays(upcoming);
+
+      const templateRows = (templatesRes.data ?? []) as TemplateRow[];
+
+      setTemplateOptions(
+        templateRows.map((template) => ({
+          id: template.id,
+          name: template.name,
+          category: template.category as TemplateCategory,
+          message: template.message,
+          is_global: Boolean(template.is_global),
+        })),
+      );
+
+      const settingsData = (organizationRes.data?.settings as Record<string, unknown>) ?? {};
+      setOrganizationSettings(settingsData);
+      setAutomationSettings(
+        normalizeAutomationSettings(
+          (settingsData as Record<string, unknown>)?.automations ?? defaultAutomationSettings,
+        ),
+      );
+      setAutomationDirty(false);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const findTemplateById = (templateId: string | null) => {
+    if (!templateId) return null;
+    return templateOptions.find((option) => option.id === templateId) ?? null;
+  };
+
+  const toggleAutomation = (key: keyof AutomationSettings) => {
+    setAutomationSettings((prev) => {
+      const next = {
+        ...prev,
+        [key]: {
+          ...prev[key],
+          enabled: !prev[key].enabled,
+        },
+      };
+      if (next[key].enabled !== prev[key].enabled) {
+        setAutomationDirty(true);
+      }
+      return next;
+    });
+  };
+
+  const setAutomationTemplate = (
+    key: keyof AutomationSettings,
+    templateId: string | null,
+    templateName: string | null,
+  ) => {
+    setAutomationSettings((prev) => {
+      const next = {
+        ...prev,
+        [key]: {
+          ...prev[key],
+          templateId,
+          templateName,
+        },
+      };
+      if (next[key].templateId !== prev[key].templateId) {
+        setAutomationDirty(true);
+      }
+      return next;
+    });
+  };
+
+  const setAutomationTiming = (key: keyof AutomationSettings, value: number) => {
+    const sanitizedValue = Number.isNaN(value) ? 0 : Math.max(0, value);
+    setAutomationSettings((prev) => {
+      const next = { ...prev };
+      if (key === 'bookingConfirmation') {
+        if (next.bookingConfirmation.sendDelayMinutes !== sanitizedValue) {
+          next.bookingConfirmation = {
+            ...next.bookingConfirmation,
+            sendDelayMinutes: sanitizedValue,
+          };
+          setAutomationDirty(true);
+        }
+      } else if (key === 'bookingReminder') {
+        if (next.bookingReminder.hoursBefore !== sanitizedValue) {
+          next.bookingReminder = {
+            ...next.bookingReminder,
+            hoursBefore: sanitizedValue,
+          };
+          setAutomationDirty(true);
+        }
+      } else if (key === 'visitFollowup') {
+        if (next.visitFollowup.delayHours !== sanitizedValue) {
+          next.visitFollowup = {
+            ...next.visitFollowup,
+            delayHours: sanitizedValue,
+          };
+          setAutomationDirty(true);
+        }
+      }
+      return next;
+    });
+  };
+
+  const saveAutomations = async () => {
+    if (!organizationId) {
+      showToast('Ingen organisation vald', 'error');
+      return;
+    }
+
+    try {
+      setSavingAutomations(true);
+      const nextSettings = {
+        ...(organizationSettings ?? {}),
+        automations: automationSettings,
+      };
+
+      const { error } = await supabase
+        .from('organizations')
+        .update({ settings: nextSettings } as any)
+        .eq('id', organizationId);
+
+      if (error) {
+        throw error;
+      }
+
+      setOrganizationSettings(nextSettings);
+      setAutomationDirty(false);
+      showToast('Automatiseringar sparade!', 'success');
+    } catch (error: any) {
+      showToast(error.message || 'Kunde inte spara automationsinställningar', 'error');
+    } finally {
+      setSavingAutomations(false);
     }
   };
 
@@ -392,71 +577,288 @@ export default function AutomationPage() {
         </CardContent>
       </Card>
 
-      {/* Coming Soon Automations */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Card className="border-2 border-dashed border-blue-200 bg-blue-50 opacity-75">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-3 bg-blue-600 rounded-lg">
-                <Clock className="h-6 w-6 text-white" />
+      <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5 text-blue-600" />
+            Automatiserade bokningsflöden
+          </CardTitle>
+          <CardDescription>
+            Aktivera tre steg som ger gästen bekräftelse, påminnelse och omtänksam uppföljning – helt utan manuellt arbete.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-6">
+            <div className="border border-blue-100 bg-white rounded-xl p-5">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <h3 className="font-semibold text-gray-900">Bekräftelse direkt</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Skicka ett tryggt bekräftelse-SMS så snart bokningen registreras.
+                  </p>
+                </div>
+                <button
+                  onClick={() => toggleAutomation('bookingConfirmation')}
+                  className={`px-4 py-1 text-xs font-semibold rounded-full border transition ${
+                    automationSettings.bookingConfirmation.enabled
+                      ? 'bg-green-100 border-green-200 text-green-700'
+                      : 'bg-gray-100 border-gray-200 text-gray-500'
+                  }`}
+                >
+                  {automationSettings.bookingConfirmation.enabled ? 'Aktiv' : 'Av'}
+                </button>
               </div>
-              <div>
-                <h4 className="font-semibold text-gray-900">Booking Reminders</h4>
-                <p className="text-xs text-gray-600">Automatiska påminnelser</p>
-              </div>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">
-              Skicka automatiskt påminnelser 24h och 2h innan bokning. Minska no-shows med 35%.
-            </p>
-            <div className="flex items-center gap-2 text-xs text-blue-600">
-              <Sparkles className="h-4 w-4" />
-              Kommer snart
-            </div>
-          </CardContent>
-        </Card>
 
-        <Card className="border-2 border-dashed border-orange-200 bg-orange-50 opacity-75">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-3 bg-orange-600 rounded-lg">
-                <Heart className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-gray-900">Win-Back Campaigns</h4>
-                <p className="text-xs text-gray-600">Ta tillbaka inaktiva</p>
-              </div>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">
-              Automatisk SMS till kunder som inte besökt på 60+ dagar. Återfå 25% av förlorade kunder.
-            </p>
-            <div className="flex items-center gap-2 text-xs text-orange-600">
-              <Sparkles className="h-4 w-4" />
-              Kommer snart
-            </div>
-          </CardContent>
-        </Card>
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4 mt-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+                    SMS-mall
+                  </label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
+                    value={automationSettings.bookingConfirmation.templateId ?? ''}
+                    onChange={(event) => {
+                      const value = event.target.value || null;
+                      const selected = templateOptions.find((option) => option.id === value) ?? null;
+                      setAutomationTemplate(
+                        'bookingConfirmation',
+                        selected?.id ?? null,
+                        selected?.name ?? null,
+                      );
+                    }}
+                    disabled={!automationSettings.bookingConfirmation.enabled || templateOptions.length === 0}
+                  >
+                    <option value="">Välj mall...</option>
+                    {templateOptions
+                      .filter((option) => option.category === 'confirmation')
+                      .map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.name} {option.is_global ? '(Global)' : ''}
+                        </option>
+                      ))}
+                  </select>
+                  {automationSettings.bookingConfirmation.enabled &&
+                    templateOptions.filter((option) => option.category === 'confirmation').length === 0 && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Inga bekräftelsemallar ännu.{' '}
+                        <Link href="/templates" className="text-blue-600 hover:underline">
+                          Skapa en i SMS-mallar.
+                        </Link>
+                      </p>
+                    )}
+                  {automationSettings.bookingConfirmation.templateId && (
+                    <p className="mt-3 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap line-clamp-4">
+                      {findTemplateById(automationSettings.bookingConfirmation.templateId)?.message}
+                    </p>
+                  )}
+                </div>
 
-        <Card className="border-2 border-dashed border-purple-200 bg-purple-50 opacity-75">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-3 bg-purple-600 rounded-lg">
-                <Star className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-gray-900">Review Requests</h4>
-                <p className="text-xs text-gray-600">Automatiska review-begäran</p>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+                    Fördröjning
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      value={automationSettings.bookingConfirmation.sendDelayMinutes}
+                      onChange={(event) => setAutomationTiming('bookingConfirmation', Number(event.target.value))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
+                      disabled={!automationSettings.bookingConfirmation.enabled}
+                    />
+                    <span className="text-sm text-gray-600">minuter</span>
+                  </div>
+                </div>
               </div>
             </div>
-            <p className="text-sm text-gray-600 mb-4">
-              SMS 2-4 timmar efter besök med direkt länk till Google Reviews. Öka reviews 5x.
+
+            <div className="border border-purple-100 bg-white rounded-xl p-5">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <h3 className="font-semibold text-gray-900">Påminnelse före besöket</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Skicka påminnelse automatiskt för att minska no-shows.
+                  </p>
+                </div>
+                <button
+                  onClick={() => toggleAutomation('bookingReminder')}
+                  className={`px-4 py-1 text-xs font-semibold rounded-full border transition ${
+                    automationSettings.bookingReminder.enabled
+                      ? 'bg-green-100 border-green-200 text-green-700'
+                      : 'bg-gray-100 border-gray-200 text-gray-500'
+                  }`}
+                >
+                  {automationSettings.bookingReminder.enabled ? 'Aktiv' : 'Av'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4 mt-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+                    SMS-mall
+                  </label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:bg-gray-100 disabled:text-gray-400"
+                    value={automationSettings.bookingReminder.templateId ?? ''}
+                    onChange={(event) => {
+                      const value = event.target.value || null;
+                      const selected = templateOptions.find((option) => option.id === value) ?? null;
+                      setAutomationTemplate('bookingReminder', selected?.id ?? null, selected?.name ?? null);
+                    }}
+                    disabled={!automationSettings.bookingReminder.enabled || templateOptions.length === 0}
+                  >
+                    <option value="">Välj mall...</option>
+                    {templateOptions
+                      .filter((option) => option.category === 'reminder')
+                      .map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.name} {option.is_global ? '(Global)' : ''}
+                        </option>
+                      ))}
+                  </select>
+                  {automationSettings.bookingReminder.enabled &&
+                    templateOptions.filter((option) => option.category === 'reminder').length === 0 && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Inga påminnelsemallar ännu.{' '}
+                        <Link href="/templates" className="text-blue-600 hover:underline">
+                          Skapa en i SMS-mallar.
+                        </Link>
+                      </p>
+                    )}
+                  {automationSettings.bookingReminder.templateId && (
+                    <p className="mt-3 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap line-clamp-4">
+                      {findTemplateById(automationSettings.bookingReminder.templateId)?.message}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+                    Tid före besök
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      value={automationSettings.bookingReminder.hoursBefore}
+                      onChange={(event) => setAutomationTiming('bookingReminder', Number(event.target.value))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:bg-gray-100 disabled:text-gray-400"
+                      disabled={!automationSettings.bookingReminder.enabled}
+                    />
+                    <span className="text-sm text-gray-600">timmar</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-green-100 bg-white rounded-xl p-5">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <h3 className="font-semibold text-gray-900">Uppföljning efter besöket</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Tacka, samla feedback och föreslå nästa steg – automatiskt.
+                  </p>
+                </div>
+                <button
+                  onClick={() => toggleAutomation('visitFollowup')}
+                  className={`px-4 py-1 text-xs font-semibold rounded-full border transition ${
+                    automationSettings.visitFollowup.enabled
+                      ? 'bg-green-100 border-green-200 text-green-700'
+                      : 'bg-gray-100 border-gray-200 text-gray-500'
+                  }`}
+                >
+                  {automationSettings.visitFollowup.enabled ? 'Aktiv' : 'Av'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4 mt-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+                    SMS-mall
+                  </label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-200 disabled:bg-gray-100 disabled:text-gray-400"
+                    value={automationSettings.visitFollowup.templateId ?? ''}
+                    onChange={(event) => {
+                      const value = event.target.value || null;
+                      const selected = templateOptions.find((option) => option.id === value) ?? null;
+                      setAutomationTemplate('visitFollowup', selected?.id ?? null, selected?.name ?? null);
+                    }}
+                    disabled={!automationSettings.visitFollowup.enabled || templateOptions.length === 0}
+                  >
+                    <option value="">Välj mall...</option>
+                    {templateOptions
+                      .filter((option) => option.category === 'thank_you' || option.category === 'marketing')
+                      .map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.name} {option.is_global ? '(Global)' : ''}
+                        </option>
+                      ))}
+                  </select>
+                  {automationSettings.visitFollowup.enabled &&
+                    templateOptions.filter((option) => option.category === 'thank_you' || option.category === 'marketing').length === 0 && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Inga uppföljningsmallar ännu.{' '}
+                        <Link href="/templates" className="text-blue-600 hover:underline">
+                          Skapa en i SMS-mallar.
+                        </Link>
+                      </p>
+                    )}
+                  {automationSettings.visitFollowup.templateId && (
+                    <p className="mt-3 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap line-clamp-4">
+                      {findTemplateById(automationSettings.visitFollowup.templateId)?.message}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+                    Skicka efter
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      value={automationSettings.visitFollowup.delayHours}
+                      onChange={(event) => setAutomationTiming('visitFollowup', Number(event.target.value))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-200 disabled:bg-gray-100 disabled:text-gray-400"
+                      disabled={!automationSettings.visitFollowup.enabled}
+                    />
+                    <span className="text-sm text-gray-600">timmar efter</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between mt-6">
+            <p className="text-xs text-gray-500">
+              Tips: Använd playbooken för din bransch på sidan{' '}
+              <Link href="/templates" className="text-blue-600 hover:underline">
+                SMS-mallar
+              </Link>{' '}
+              för att få förifyllda mallar.
             </p>
-            <div className="flex items-center gap-2 text-xs text-purple-600">
-              <Sparkles className="h-4 w-4" />
-              Kommer snart
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Button
+              onClick={saveAutomations}
+              disabled={!automationDirty || savingAutomations}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {savingAutomations ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Sparar...
+                </>
+              ) : (
+                <>
+                  Spara automationer
+                  <Sparkles className="h-4 w-4 ml-2" />
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Why Automation Matters */}
       <Card className="mt-8 bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200">

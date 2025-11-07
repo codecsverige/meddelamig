@@ -1,6 +1,7 @@
 import type { Database } from '@/lib/supabase/types';
+import type { AutomationSettings } from '@/lib/automation/presets';
 
-type IndustryKey = Database['public']['Tables']['organizations']['Insert']['industry'];
+export type IndustryKey = Database['public']['Tables']['organizations']['Insert']['industry'];
 type CampaignStatus = Database['public']['Tables']['campaigns']['Insert']['status'];
 type TemplateCategory = Database['public']['Tables']['sms_templates']['Insert']['category'];
 
@@ -305,4 +306,288 @@ export const industryOptions: Array<{
 export function getSetupBlueprint(industry: IndustryKey, goal: SetupGoal): SetupBlueprint {
   const createBlueprint = industryBlueprints[industry] ?? industryBlueprints.b2b;
   return createBlueprint(goal);
+}
+
+export interface PlaybookDefinition {
+  id: string;
+  industry: IndustryKey;
+  goal: SetupGoal;
+  title: string;
+  headline: string;
+  summary: string;
+  outcomes: string[];
+  extraTemplates?: Array<Omit<Database['public']['Tables']['sms_templates']['Insert'], 'organization_id' | 'id'>>;
+  extraCampaigns?: Array<Omit<Database['public']['Tables']['campaigns']['Insert'], 'organization_id' | 'id'>>;
+  automationPresets?: Partial<AutomationSettings>;
+}
+
+export const playbookCatalog: PlaybookDefinition[] = [
+  {
+    id: 'restaurant-vip-weekend',
+    industry: 'restaurant',
+    goal: 'increase_bookings',
+    title: 'Fyll helgen med VIP-gäster',
+    headline: 'Skapa tryck inför helgen och bygg stamkundsklubben.',
+    summary:
+      'Kombo av kampanjer och automatiska utskick som fyller sena sittningar, håller stamkunder varma och triggar återbesök efter helgen.',
+    outcomes: [
+      'Skicka erbjudande till VIP-gäster inför helgen',
+      'Automatisk bekräftelse + påminnelse för bokningar',
+      'Tack-SMS med incitament till återbesök',
+    ],
+    extraTemplates: [
+      {
+        name: 'Helg VIP-bjudning',
+        message:
+          'Hej {{contact.first_name}}! Vårt kök laddar för helgen och vill bjuda dig på ett glas bubbel vid nästa besök. Svara HELG om du vill boka fredag/lördag.',
+        category: 'marketing',
+        industry: 'restaurant',
+        is_global: false,
+      },
+      {
+        name: 'No-show uppföljning',
+        message:
+          'Hej {{contact.first_name}}, vi saknade dig hos {{organization.name}} idag. Vill du boka om? Svara OM så hjälper vi dig direkt.',
+        category: 'reminder',
+        industry: 'restaurant',
+        is_global: false,
+      },
+    ],
+    extraCampaigns: [
+      {
+        name: 'Söndagsbrunch för stamgäster',
+        message:
+          '🥞 Söndagsbrunch på {{organization.name}}! Ta med en vän och få 2 för 1 på brunchtallrikar. Svara BRUNCH för att boka bord 11–14.',
+        target_tags: ['VIP', 'Stamkund'],
+        status: 'draft',
+        total_recipients: 0,
+        sent_count: 0,
+        delivered_count: 0,
+        failed_count: 0,
+      },
+    ],
+    automationPresets: {
+      bookingConfirmation: {
+        enabled: true,
+        templateName: 'Bokningsbekräftelse',
+        templateId: null,
+        sendDelayMinutes: 0,
+      },
+      bookingReminder: {
+        enabled: true,
+        templateName: 'Påminnelse 24h',
+        templateId: null,
+        hoursBefore: 8,
+      },
+      visitFollowup: {
+        enabled: true,
+        templateName: 'Uppföljning efter besök',
+        templateId: null,
+        delayHours: 12,
+      },
+    },
+  },
+  {
+    id: 'salon-retention',
+    industry: 'salon',
+    goal: 'reactivate_customers',
+    title: 'Keep Clients Coming Back',
+    headline: 'Automatisera hela resan: bekräftelse → påminnelse → eftervård.',
+    summary:
+      'Perfekt för salonger som vill minska avbokningar och väcka liv i sovande kunder med rätt budskap i rätt tid.',
+    outcomes: [
+      'Direkt bekräftelse som bygger trygghet',
+      'Påminnelse 24h före besök för att undvika no-shows',
+      'Uppföljning som föreslår nästa bokning och säljer tillbehör',
+    ],
+    extraTemplates: [
+      {
+        name: 'VIP Färg-uppgradering',
+        message:
+          'Hej {{contact.first_name}}! Vi har två tider för exklusiv färgbehandling denna vecka. Svara FÄRG för att få prioriterad tid och 15% på Olaplex.',
+        category: 'marketing',
+        industry: 'salon',
+        is_global: false,
+      },
+      {
+        name: 'Eftervård & recension',
+        message:
+          'Tack för din behandling hos {{organization.name}}! Använd vår styling-guide: {{system.short_link}} och svara gärna med ett betyg 1-5.',
+        category: 'thank_you',
+        industry: 'salon',
+        is_global: false,
+      },
+    ],
+    extraCampaigns: [
+      {
+        name: 'Återaktivera färgkunder',
+        message:
+          'Hej {{contact.first_name}}! Dags att fräscha upp färgen? Boka denna vecka och få gratis glossing-treatment (värde 295 kr). Svara FÄRG.',
+        target_tags: ['Färg'],
+        status: 'draft',
+        total_recipients: 0,
+        sent_count: 0,
+        delivered_count: 0,
+        failed_count: 0,
+      },
+    ],
+    automationPresets: {
+      bookingConfirmation: {
+        enabled: true,
+        templateName: 'Tidsbokning bekräftelse',
+        templateId: null,
+        sendDelayMinutes: 0,
+      },
+      bookingReminder: {
+        enabled: true,
+        templateName: 'Påminnelse 24h',
+        templateId: null,
+        hoursBefore: 24,
+      },
+      visitFollowup: {
+        enabled: true,
+        templateName: 'Eftervård & recension',
+        templateId: null,
+        delayHours: 3,
+      },
+    },
+  },
+  {
+    id: 'workshop-service-loop',
+    industry: 'workshop',
+    goal: 'increase_bookings',
+    title: 'Serviceflöde utan glapp',
+    headline: 'Bekräfta bokningen, påminn inför lämning och följ upp för serviceklubb.',
+    summary:
+      'Bygg trovärdighet och återkommande affärer med tydliga SMS-touchpoints runt varje verkstadsbesök.',
+    outcomes: [
+      'Automatiskt bekräftelse-SMS med praktisk info',
+      'Påminnelse inför servicebesök med checklistan',
+      'Uppföljning som säljer nästa service eller däckskifte',
+    ],
+    extraTemplates: [
+      {
+        name: 'Servicepåminnelse kvällen innan',
+        message:
+          'Hej {{contact.first_name}}! Vi ses hos {{organization.name}} i morgon kl {{appointment.time}}. Glöm inte bilnyckel och servicebok. Svara BEKR för att bekräfta.',
+        category: 'reminder',
+        industry: 'workshop',
+        is_global: false,
+      },
+      {
+        name: 'Däckservice uppföljning',
+        message:
+          'Tack för att du valde {{organization.name}} för däckskiftet! Svara VINTER om du vill få påminnelse när det är dags att byta tillbaka.',
+        category: 'thank_you',
+        industry: 'workshop',
+        is_global: false,
+      },
+    ],
+    extraCampaigns: [
+      {
+        name: 'Besiktningspåminnelse',
+        message:
+          'Hej {{contact.first_name}}! Går din besiktning ut snart? Vi hjälper dig med genomgång och lånebil. Svara BES för att boka tid.',
+        target_tags: ['Service'],
+        status: 'draft',
+        total_recipients: 0,
+        sent_count: 0,
+        delivered_count: 0,
+        failed_count: 0,
+      },
+    ],
+    automationPresets: {
+      bookingConfirmation: {
+        enabled: true,
+        templateName: 'Servicebekräftelse',
+        templateId: null,
+        sendDelayMinutes: 0,
+      },
+      bookingReminder: {
+        enabled: true,
+        templateName: 'Servicepåminnelse kvällen innan',
+        templateId: null,
+        hoursBefore: 12,
+      },
+      visitFollowup: {
+        enabled: true,
+        templateName: 'Däckservice uppföljning',
+        templateId: null,
+        delayHours: 6,
+      },
+    },
+  },
+  {
+    id: 'b2b-demo-engine',
+    industry: 'b2b',
+    goal: 'promote_event',
+    title: 'Demo → Påminnelse → Uppföljning',
+    headline: 'Håll försäljningsprocessen varm med automatiserade steg som ökar conversion.',
+    summary:
+      'Skickar mötesbekräftelse, påminnelse före demo och uppföljning med nästa call-to-action.',
+    outcomes: [
+      'Tilldela kunder i pipeline färdiga mallar',
+      'Automatisk påminnelse inför demo/webinar',
+      'Smart uppföljning med CTA att boka uppföljningsmöte',
+    ],
+    extraTemplates: [
+      {
+        name: 'Demo påminnelse',
+        message:
+          'Hej {{contact.first_name}}! Vi ses digitalt {{appointment.date}} kl {{appointment.time}}. Länk: {{system.meeting_link}}. Svara OK för att bekräfta.',
+        category: 'reminder',
+        industry: 'b2b',
+        is_global: false,
+      },
+      {
+        name: 'Demo uppföljning',
+        message:
+          'Tack för idag {{contact.first_name}}! Vill du se prisbild och implementeringsplan? Svara PLAN så skickar vi en kort sammanfattning.',
+        category: 'thank_you',
+        industry: 'b2b',
+        is_global: false,
+      },
+    ],
+    extraCampaigns: [
+      {
+        name: 'Partner webinar-inbjudan',
+        message:
+          'Hej {{contact.first_name}}! Vi kör ett 20 min webinar om hur {{organization.name}} sparar tid. Svara DELTA för att få kalenderinbjudan.',
+        target_tags: ['Demo', 'Partner'],
+        status: 'draft',
+        total_recipients: 0,
+        sent_count: 0,
+        delivered_count: 0,
+        failed_count: 0,
+      },
+    ],
+    automationPresets: {
+      bookingConfirmation: {
+        enabled: true,
+        templateName: 'Mötesbokning',
+        templateId: null,
+        sendDelayMinutes: 0,
+      },
+      bookingReminder: {
+        enabled: true,
+        templateName: 'Demo påminnelse',
+        templateId: null,
+        hoursBefore: 2,
+      },
+      visitFollowup: {
+        enabled: true,
+        templateName: 'Demo uppföljning',
+        templateId: null,
+        delayHours: 1,
+      },
+    },
+  },
+];
+
+export function getPlaybookById(id: string): PlaybookDefinition | undefined {
+  return playbookCatalog.find((playbook) => playbook.id === id);
+}
+
+export function getPlaybooksForIndustry(industry: IndustryKey): PlaybookDefinition[] {
+  return playbookCatalog.filter((playbook) => playbook.industry === industry);
 }
