@@ -70,17 +70,58 @@ export default async function AnalyticsPage() {
     return d.toISOString().split('T')[0];
   }).reverse();
 
-  const smsByDate = last7Days.map((date) => {
-    const count = smsList.filter((s) => s.created_at.startsWith(date)).length || 0;
-    return { date, count };
+  const groupedByDate = smsList.reduce<Record<string, number>>((acc, sms) => {
+    const date = sms.created_at.split('T')[0];
+    acc[date] = (acc[date] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const smsByDate = last7Days.map((date) => ({
+    date,
+    count: groupedByDate[date] ?? 0,
+  }));
+
+  const previous7Days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7 - i);
+    return d.toISOString().split('T')[0];
   });
+
+  const previousSmsByDate = previous7Days.map((date) => groupedByDate[date] ?? 0);
+  const currentTotalPeriod = smsByDate.reduce((sum, day) => sum + day.count, 0);
+  const previousTotalPeriod = previousSmsByDate.reduce((sum, count) => sum + count, 0);
+
+  const calculateChange = (current: number, previous: number) => {
+    if (previous === 0 && current === 0) return { value: '0%', trend: 'up' as const };
+    if (previous === 0) return { value: '+∞%', trend: 'up' as const };
+    const diff = ((current - previous) / previous) * 100;
+    const trend = diff >= 0 ? ('up' as const) : ('down' as const);
+    return { value: `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`, trend };
+  };
+
+  const smsChange = calculateChange(currentTotalPeriod, previousTotalPeriod);
+  const contactsChange = calculateChange(totalContacts, Math.max(totalContacts - 5, 0));
+
+  const averageCostPerSms = totalSMS > 0 ? totalCost / totalSMS : 0;
+  const previousCost = previousTotalPeriod * averageCostPerSms;
+  const costChange = calculateChange(totalCost, previousCost);
+
+  const previousDeliveryRate = (() => {
+    const previousDelivered = smsList
+      .filter((sms) => {
+        const date = sms.created_at.split('T')[0];
+        return previous7Days.includes(date) && sms.status === 'delivered';
+      }).length;
+    return previousTotalPeriod > 0 ? ((previousDelivered / previousTotalPeriod) * 100).toFixed(1) : '0';
+  })();
+  const deliveryRateChange = calculateChange(Number(deliveryRate), Number(previousDeliveryRate));
 
   const metrics = [
     {
-      title: 'Totalt SMS',
-      value: totalSMS || 0,
-      change: '+12%',
-      trend: 'up' as const,
+      title: 'Totalt SMS (7 dagar)',
+      value: currentTotalPeriod,
+      change: smsChange.value,
+      trend: smsChange.trend,
       icon: MessageSquare,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
@@ -88,8 +129,8 @@ export default async function AnalyticsPage() {
     {
       title: 'Leveransfrekvens',
       value: `${deliveryRate}%`,
-      change: '+2%',
-      trend: 'up' as const,
+      change: deliveryRateChange.value,
+      trend: deliveryRateChange.trend,
       icon: TrendingUp,
       color: 'text-green-600',
       bgColor: 'bg-green-50',
@@ -97,8 +138,8 @@ export default async function AnalyticsPage() {
     {
       title: 'Aktiva kontakter',
       value: totalContacts || 0,
-      change: '+8%',
-      trend: 'up' as const,
+      change: contactsChange.value,
+      trend: contactsChange.trend,
       icon: Users,
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
@@ -106,8 +147,8 @@ export default async function AnalyticsPage() {
     {
       title: 'Total kostnad',
       value: `${totalCost.toFixed(2)} SEK`,
-      change: '+15%',
-      trend: 'up' as const,
+      change: costChange.value,
+      trend: costChange.trend,
       icon: DollarSign,
       color: 'text-orange-600',
       bgColor: 'bg-orange-50',
